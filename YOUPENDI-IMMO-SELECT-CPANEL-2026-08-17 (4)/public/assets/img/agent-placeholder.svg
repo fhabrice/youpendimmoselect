@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 720" role="img" aria-labelledby="title desc">
+  <title id="title">Photo d’agent à ajouter</title>
+  <desc id="desc">Silhouette utilisée tant que la photo de l’agent n’a pas été téléversée.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0ea5df"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="720" fill="url(#bg)"/>
+  <circle cx="300" cy="245" r="112" fill="#fff" opacity=".9"/>
+  <path d="M102 650c17-155 91-244 198-244s181 89 198 244" fill="#fff" opacity=".9"/>
+  <text x="300" y="688" text-anchor="middle" fill="#fff" font-family="Arial, sans-serif" font-size="25" font-weight="700">PHOTO DE L’AGENT</text>
+</svg>

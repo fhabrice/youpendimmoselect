@@ -1,0 +1,1 @@
+<section style="padding:80px 0"><div class="container"><h1 class="page-title"><?= (int)($code ?? 500) ?></h1><p><?= e($message ?? 'Une erreur est survenue.') ?></p><a class="btn" href="<?= e(base_url()) ?>">Accueil</a></div></section>

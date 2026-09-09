@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" fill="none">
+  <rect x="1" y="4" width="48" height="48" rx="4" stroke="#C9A227" stroke-width="1.4"/>
+  <path d="M14 16h8.2l5.8 16.4L33.8 16H42L31.2 42h-8.4L14 16z" fill="#C9A227"/>
+  <text x="62" y="28" fill="#F4EFE4" font-family="Georgia, serif" font-size="18" letter-spacing="3.2">YOUPENDI</text>
+  <text x="62" y="44" fill="#C9A227" font-family="Arial, sans-serif" font-size="9" letter-spacing="4.6">IMMO SELECT</text>
+</svg>

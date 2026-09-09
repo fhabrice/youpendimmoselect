@@ -1,0 +1,1 @@
+<section style="padding:80px 0"><div class="container"><h1 class="page-title">Page introuvable</h1><p><?= e($message ?? '') ?></p><a class="btn btn-gold" href="<?= e(base_url()) ?>">Retour à l’accueil</a></div></section>
