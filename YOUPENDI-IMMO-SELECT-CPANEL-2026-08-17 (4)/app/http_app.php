@@ -290,7 +290,15 @@ function app_property_show(int $id): void
         <?php foreach ($rents as $r): ?><div><?= e(dfr($r['period_start'])) ?> — <?= e(money($r['amount'], $r['currency'] ?? 'USD')) ?> <?= status_badge($r['status']) ?></div><?php endforeach; ?>
         <h3>Documents</h3>
         <?php if (!$docs): ?><p class="muted">Aucun document.</p><?php endif; ?>
-        <?php foreach ($docs as $d): ?><div><a href="<?= e(upload_url($d['path'])) ?>"><?= e($d['title']) ?></a></div><?php endforeach; ?>
+        <?php foreach ($docs as $d): ?>
+          <div>
+            <?php if (photo_exists((string) $d['path'])): ?>
+              <a href="<?= e(upload_url((string) $d['path'])) ?>"><?= e($d['title']) ?></a>
+            <?php else: ?>
+              <span class="muted"><?= e($d['title']) ?> — fichier introuvable</span>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
       </div>
     </div>
     <div class="panel" style="margin-top:18px">

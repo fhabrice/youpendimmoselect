@@ -15,34 +15,73 @@ INSTALLATION / MISE À JOUR
 2. Sauvegardez les fichiers actuels de public_html.
 3. Téléversez ce ZIP dans public_html avec le gestionnaire de fichiers cPanel.
 4. Extrayez-le directement dans public_html et acceptez le remplacement des fichiers du site.
-5. Ne supprimez pas avant la mise à jour :
-     youpendimmoselect/public/uploads/
+5. Ne supprimez jamais avant la mise à jour :
+     youpendimmoselect/public/uploads/        ← les photos de la vitrine
      youpendimmoselect/storage/config.local.php
+   Le paquet contient maintenant public/uploads/.htaccess et public/uploads/index.html :
+   le dossier survit donc à l'extraction au lieu d'être écrasé par un dossier vide.
 6. Vérifiez que storage et public/uploads sont accessibles en écriture (755 ou 775).
 7. Ouvrez https://www.youpendimmoselect.com/diagnostic.php.
-8. Ouvrez ensuite le site et connectez-vous à l’administration.
+   La section « Images de la vitrine » liste les photos référencées en base
+   mais absentes du serveur.
+8. Ouvrez ensuite le site et connectez-vous à l'administration.
 
-CORRECTIONS DE CETTE VERSION
-----------------------------
+CORRECTIONS DE CETTE VERSION — IMAGES DE LA VITRINE
+---------------------------------------------------
+1. Plus aucune image cassée. photo_url() vérifie que le fichier existe vraiment
+   sur le disque avant d'écrire son URL. S'il est absent, la carte, la fiche bien
+   et la fiche Immo Stay affichent l'image de substitution
+   assets/img/photo-missing.svg (les agents gardent agent-placeholder.svg).
+2. Les fichiers téléversés sont servis par l'application elle-même
+   (/uploads/... et /assets/... passent par le contrôleur frontal).
+   Même si la règle de réécriture de l'hébergeur manque ou pointe vers un mauvais
+   dossier, les images s'affichent.
+3. Le paquet contient enfin les .htaccess :
+     .htaccess                    (racine de public_html — réécriture des URL)
+     public/uploads/.htaccess     (aucune exécution de script, dossier conservé)
+     app/.htaccess, storage/.htaccess (code et données non servis)
+4. Téléversement fiabilisé : dossier créé et vérifié inscriptible, fichier
+   contrôlé après écriture, message d'erreur explicite en cas d'échec
+   (avant, un dossier non inscriptible faisait échouer la création du bien
+   sans explication).
+5. Les anciens chemins stockés en base (« uploads/x.jpg », « /uploads/x.jpg »,
+   « public/uploads/x.jpg », chemin absolu) sont reconnus et normalisés ;
+   les tentatives de sortie du dossier (../) sont refusées.
+6. Les listes de documents affichent « fichier introuvable » au lieu d'un lien mort.
+7. diagnostic.php détecte l'implantation réelle du paquet, contrôle le dossier des
+   téléversements et affiche le nombre de photos manquantes avec des exemples.
+8. index.php (pont public_html) accepte les deux implantations :
+   youpendimmoselect/public/index.php ou public/index.php.
+
+PHOTOS ACTUELLEMENT MANQUANTES SUR LE SERVEUR
+---------------------------------------------
+Les photos téléversées avant cette version peuvent avoir disparu du disque
+(mise à jour du paquet ayant remplacé le dossier public/uploads, ou remise à zéro).
+Le diagnostic les liste. Aucune correction de code ne peut les faire réapparaître :
+ouvrez Administration > Biens (ou Agents) et téléversez à nouveau les photos.
+La vitrine affiche l'image de substitution en attendant.
+
+CORRECTIONS CONSERVÉES DES VERSIONS PRÉCÉDENTES
+-----------------------------------------------
 - Les 26 provinces de la République Démocratique du Congo sont disponibles.
 - Province et ville sont liées dans l'inscription, les biens, le CRM, les recherches,
   les agents et les filtres des rapports.
 - Les anciennes lignes reçoivent automatiquement leur province lorsqu'une ville RDC
   connue est déjà enregistrée ; la migration reste additive et non destructive.
-- L'inscription bailleur utilise des utilitaires Tailwind compilés localement.
-- La zone de prévisualisation des neuf rapports utilise également Tailwind.
-- Aucun CDN Tailwind ni outil Node n'est nécessaire sur cPanel.
+- L'inscription bailleur et la prévisualisation des neuf rapports utilisent des
+  utilitaires Tailwind compilés localement. Aucun CDN Tailwind ni outil Node
+  n'est nécessaire sur cPanel.
 - Les corrections CRM, visites, agents, archivage, rapports et remise à zéro des
   versions précédentes sont conservées.
 
 REMISE À ZÉRO DEMANDÉE
 ----------------------
-La remise à zéro n’est jamais lancée automatiquement lors de l’installation.
+La remise à zéro n'est jamais lancée automatiquement lors de l'installation.
 Après sauvegarde et vérification des corrections :
 1. Connectez-vous avec le compte administrateur à conserver.
 2. Ouvrez Administration > Remise à zéro.
 3. Saisissez REMISE A ZERO et le mot de passe administrateur.
-4. Confirmez l’effacement.
+4. Confirmez l'effacement.
 
 Cette opération efface toutes les données métier, les agents et les autres utilisateurs,
 ainsi que les fichiers téléversés. Seuls le compte administrateur connecté, les paramètres
@@ -52,7 +91,7 @@ BASE DE DONNÉES
 ---------------
 Nom de la base historique : wqmetrvw_immo
 La mise à niveau est automatique et non destructive tant que la remise à zéro explicite
-n’est pas confirmée depuis l’administration.
+n'est pas confirmée depuis l'administration.
 
 SÉCURITÉ
 --------

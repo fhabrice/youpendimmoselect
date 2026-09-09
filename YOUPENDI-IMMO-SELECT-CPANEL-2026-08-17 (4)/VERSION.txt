@@ -1,4 +1,20 @@
 YOUPENDI IMMO SELECT
 Version cPanel : 2026-08-17 (26 provinces RDC et Tailwind local)
+Révision : 2026-09-09 — correction de l'affichage des images de la vitrine
 Commit source : 43a8f46babe8d50b42aa291a0712d088a24b4f62
 Branche source : arena/01a00daa-youpendimmoselect
+
+Révision 2026-09-09
+- photo_url() / agent_photo_url() ne renvoient plus l'URL d'un fichier absent :
+  image de substitution assets/img/photo-missing.svg à la place d'une image cassée.
+- /uploads/... et /assets/... servis par le contrôleur frontal (filet de sécurité
+  si la réécriture de l'hébergeur manque ou pointe ailleurs).
+- .htaccess ajoutés au paquet (racine, public/uploads, app, storage) ;
+  public/uploads/ et storage/ existent désormais dans le ZIP.
+- handle_upload() : création et contrôle du dossier, fichier vérifié après écriture,
+  erreurs explicites, .htaccess de protection recréé automatiquement.
+- Chemins de photos hérités normalisés, traversée de dossier (../) refusée.
+- Documents : « fichier introuvable » au lieu d'un lien mort.
+- diagnostic.php : section « Images de la vitrine », détection de l'implantation,
+  liste des photos référencées mais absentes.
+- index.php (pont public_html) : accepte youpendimmoselect/public/ ou public/.

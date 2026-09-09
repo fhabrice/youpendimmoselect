@@ -14,7 +14,8 @@ $loc = trim(($p['quartier'] ?? '') . ', ' . ($p['city'] ?? $p['ville'] ?? '') . 
 ?>
 <a class="card" href="<?= e($href) ?>">
   <div class="card-media">
-    <img src="<?= e(cover_of((int)$p['id'])) ?>" alt="">
+    <img src="<?= e(cover_of((int)$p['id'])) ?>" alt="<?= e($p['title'] ?? $p['titre'] ?? '') ?>" loading="lazy"
+         onerror="this.onerror=null;this.src='<?= e(photo_placeholder()) ?>'">
     <span class="<?= e($pillClass) ?>"><?= e($badge) ?></span>
   </div>
   <div class="card-body">

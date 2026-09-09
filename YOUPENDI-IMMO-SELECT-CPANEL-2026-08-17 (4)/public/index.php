@@ -34,6 +34,17 @@ function dispatch(string $path, string $method): void
         json_out(['ok' => true, 'app' => 'YOUPENDI IMMO SELECT']);
     }
 
+    // Ressources statiques (images de la vitrine, CSS, JS, documents).
+    // L'hébergeur les sert normalement en direct ; ce filet de sécurité
+    // garantit qu'elles restent accessibles même si la règle de réécriture
+    // du .htaccess manque ou pointe vers un mauvais dossier.
+    if ($method === 'GET' && preg_match('#^/uploads/(.+)$#', $path, $m)) {
+        serve_public_file(upload_root(), $m[1], true);
+    }
+    if ($method === 'GET' && preg_match('#^/assets/(.+)$#', $path, $m)) {
+        serve_public_file(asset_dir(), $m[1], false);
+    }
+
     $routes = [
         'GET /' => 'public_home',
         'GET /biens' => fn() => public_search(false),

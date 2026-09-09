@@ -152,7 +152,8 @@
         $agentPhoto = agent_photo_url($ag['avatar'] ?? $ag['photo_path'] ?? $ag['photo'] ?? null);
         ?>
         <article class="card agent-card">
-          <img class="agent-photo" src="<?= e($agentPhoto) ?>" alt="Photo de <?= e($agentName) ?>" loading="lazy">
+          <img class="agent-photo" src="<?= e($agentPhoto) ?>" alt="Photo de <?= e($agentName) ?>" loading="lazy"
+               onerror="this.onerror=null;this.src='<?= e(agent_placeholder()) ?>'">
           <div class="body">
             <div class="card-type"><?= e($agentType) ?></div>
             <h3><?= e($agentName) ?></h3>

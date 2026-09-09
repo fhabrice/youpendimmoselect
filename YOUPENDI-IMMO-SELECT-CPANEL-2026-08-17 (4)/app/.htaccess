@@ -1,0 +1,9 @@
+# YOUPENDI IMMO SELECT — code applicatif
+# Aucune ressource de ce dossier ne doit être servie directement.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

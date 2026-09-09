@@ -5,10 +5,12 @@
     <p class="muted"><?= e($p['address_public'] ?: ($p['quartier'].', '.$p['city'])) ?> — adresse exacte communiquée après visite.</p>
 
     <div class="gallery" style="margin:18px 0 26px">
-      <img class="gallery-main" src="<?= e(photo_url($photos[0]['path'] ?? null)) ?>" alt="" style="min-height:360px;object-fit:cover">
+      <img class="gallery-main" src="<?= e(photo_url($photos[0]['path'] ?? null)) ?>" alt="<?= e($p['title']) ?>" style="min-height:360px;object-fit:cover"
+           onerror="this.onerror=null;this.src='<?= e(photo_placeholder()) ?>'">
       <div class="stack">
         <?php foreach (array_slice($photos,1,3) as $ph): ?>
-          <img src="<?= e(photo_url($ph['path'])) ?>" alt="" style="height:116px;object-fit:cover;cursor:pointer">
+          <img src="<?= e(photo_url($ph['path'])) ?>" alt="" style="height:116px;object-fit:cover;cursor:pointer"
+               onerror="this.onerror=null;this.src='<?= e(photo_placeholder()) ?>'">
         <?php endforeach; ?>
       </div>
     </div>
