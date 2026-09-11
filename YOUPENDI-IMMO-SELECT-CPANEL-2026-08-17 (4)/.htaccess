@@ -1,0 +1,36 @@
+# ============================================================
+#  YOUPENDI IMMO SELECT — réécritures Apache / LiteSpeed
+#  Ce fichier doit se trouver à la racine de public_html.
+# ============================================================
+
+# Pas de listing de dossiers
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+
+# 1. Un fichier ou un dossier réellement présent est servi tel quel.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 2. Assets du paquet (CSS, JS, images) : servis depuis le dossier public
+#    de l'application quand ils s'y trouvent.
+RewriteCond %{DOCUMENT_ROOT}/youpendimmoselect/public/%1/%2 -f
+RewriteRule ^(assets|uploads)/(.+)$ /youpendimmoselect/public/%1/%2 [L]
+
+#    Variante : paquet extrait directement dans public_html.
+RewriteCond %{DOCUMENT_ROOT}/public/%1/%2 -f
+RewriteRule ^(assets|uploads)/(.+)$ /public/%1/%2 [L]
+
+# 3. Tout le reste passe par le contrôleur frontal.
+#    Celui-ci sait aussi servir /assets/... et /uploads/... : même sans
+#    règle de réécriture, aucune image ne reste cassée.
+RewriteRule ^ /index.php [L]
+</IfModule>
+
+# Jamais de téléchargement forcé ni d'exécution pour les téléversements.
+<IfModule mod_headers.c>
+Header set X-Content-Type-Options "nosniff"
+</IfModule>

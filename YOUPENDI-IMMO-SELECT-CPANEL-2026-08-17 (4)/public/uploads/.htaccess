@@ -1,0 +1,20 @@
+# YOUPENDI IMMO SELECT — dossier des téléversements
+# Ce fichier garantit que le dossier existe dans le paquet et qu'aucun
+# script déposé par erreur ne peut y être exécuté.
+Options -Indexes
+
+<IfModule mod_authz_core.c>
+  <FilesMatch "\.(php|phtml|php[0-9]|phar|cgi|pl|py|sh)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+  <FilesMatch "\.(php|phtml|php[0-9]|phar|cgi|pl|py|sh)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+Header set X-Content-Type-Options "nosniff"
+</IfModule>

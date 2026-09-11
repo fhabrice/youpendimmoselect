@@ -1,0 +1,13 @@
+# YOUPENDI IMMO SELECT — fichiers locaux à ne jamais publier
+storage/config.local.php
+storage/*.sqlite
+storage/*.sqlite-wal
+storage/*.sqlite-shm
+storage/*.log
+storage/last-error.txt
+storage/installed.lock
+storage/hosting_map.json
+storage/sql-errors.log
+public/uploads/*
+!public/uploads/.htaccess
+!public/uploads/index.html
