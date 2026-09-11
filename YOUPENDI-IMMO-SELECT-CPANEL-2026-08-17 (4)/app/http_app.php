@@ -290,7 +290,15 @@ function app_property_show(int $id): void
         <?php foreach ($rents as $r): ?><div><?= e(dfr($r['period_start'])) ?> — <?= e(money($r['amount'], $r['currency'] ?? 'USD')) ?> <?= status_badge($r['status']) ?></div><?php endforeach; ?>
         <h3>Documents</h3>
         <?php if (!$docs): ?><p class="muted">Aucun document.</p><?php endif; ?>
-        <?php foreach ($docs as $d): ?><div><a href="<?= e(upload_url($d['path'])) ?>"><?= e($d['title']) ?></a></div><?php endforeach; ?>
+        <?php foreach ($docs as $d): ?>
+          <div>
+            <?php if (photo_exists((string) $d['path'])): ?>
+              <a href="<?= e(upload_url((string) $d['path'])) ?>"><?= e($d['title']) ?></a>
+            <?php else: ?>
+              <span class="muted"><?= e($d['title']) ?> — fichier introuvable</span>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
       </div>
     </div>
     <div class="panel" style="margin-top:18px">
@@ -310,6 +318,27 @@ function app_property_show(int $id): void
         <?php if (!$contracts): ?><tr><td colspan="5" class="empty">Aucun contrat.</td></tr><?php endif; ?>
         </tbody>
       </table></div>
+    </div>
+    <?php // §19 — rapprochement : le bien face aux locataires potentiels compatibles. ?>
+    <div class="panel" style="margin-top:18px">
+      <h3>Locataires intéressés (compatibilité)</h3>
+      <p class="muted">Demandes compatibles avec ce bien, classées par score.</p>
+      <a class="btn btn-sm" href="<?= e(base_url('app/biens/' . $id . '/matching')) ?>">Voir tous les locataires potentiels</a>
+      <?php $rows = crm_matches_for_property($id, 6, 20); ?>
+      <?php if (!$rows): ?>
+        <p class="muted">Aucun locataire potentiel compatible pour le moment.</p>
+      <?php else: ?>
+        <ul class="crm-matches" style="margin-top:12px">
+          <?php foreach ($rows as $m): ?>
+            <li>
+              <a href="<?= e(base_url('app/prospects/' . $m['id'])) ?>"><?= e(prospect_reference($m)) ?> — <?= e(full_name($m)) ?></a>
+              <span class="crm-match-score"><?= (int) $m['score'] ?>%</span>
+              <span class="crm-match-meta"><?= e($m['city']) ?> — <?= e(property_types()[$m['property_type']] ?? $m['property_type']) ?> — <?= e(money($m['budget_max'])) ?></span>
+              <?= status_badge(prospect_status_normalize($m['status'] ?? null)) ?>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+      <?php endif; ?>
     </div>
     <?php
     view('app/raw', ['title' => $p['title'], 'html' => ob_get_clean()], 'app');
@@ -374,10 +403,28 @@ function app_prospects(): void
     $type = str_input('type');
     if ($type) { $w[] = 'p.type = ?'; $params[] = $type; }
     if ($province = str_input('province')) { $w[] = 'p.province = ?'; $params[] = $province; }
+    if ($city = str_input('city')) { $w[] = 'p.city = ?'; $params[] = $city; }
     if ($s = str_input('status')) { $w[] = 'p.status = ?'; $params[] = $s; }
+    if ($pt = str_input('property_type')) { $w[] = 'p.property_type = ?'; $params[] = $pt; }
+    if ($src = str_input('source')) { $w[] = 'p.source = ?'; $params[] = $src; }
+    if (($agentFilter = str_input('agent_id')) !== '') {
+        if ($agentFilter === '-1') {
+            $w[] = '(p.agent_id IS NULL OR p.agent_id = 0)';
+        } else {
+            $w[] = 'p.agent_id = ?';
+            $params[] = (int) $agentFilter;
+        }
+    }
+    if ($budget = float_input('budget_max')) {
+        $w[] = '(p.budget_max >= ? OR (p.budget_max IS NULL AND p.budget_min >= ?))';
+        $params[] = $budget;
+        $params[] = $budget;
+    }
+    if ($from = str_input('date_from')) { $w[] = 'DATE(p.created_at) >= ?'; $params[] = $from; }
+    if ($to = str_input('date_to')) { $w[] = 'DATE(p.created_at) <= ?'; $params[] = $to; }
     if ($q = str_input('q')) {
-        $w[] = '(p.first_name LIKE ? OR p.last_name LIKE ? OR p.phone LIKE ? OR p.email LIKE ?)';
-        array_push($params, "%$q%", "%$q%", "%$q%", "%$q%");
+        $w[] = '(p.first_name LIKE ? OR p.last_name LIKE ? OR p.phone LIKE ? OR p.email LIKE ? OR p.whatsapp LIKE ? OR p.reference LIKE ?)';
+        array_push($params, "%$q%", "%$q%", "%$q%", "%$q%", "%$q%", "%$q%");
     }
     $where = implode(' AND ', $w);
     $total = (int) db()->val("SELECT COUNT(*) FROM prospects p WHERE $where", $params);
@@ -391,24 +438,61 @@ function app_prospects(): void
         $params
     );
     if (str_input('export') === 'csv') {
-        csv_download('prospects.csv', ['Nom', 'Téléphone', 'E-mail', 'Type', 'Ville/quartier', 'Source', 'Responsable', 'Statut', 'Soumis le'], array_map(fn($p) => [
-            full_name($p), $p['phone'], $p['email'], prospect_type_label($p['type']), trim(($p['province'] ?? '') . ' ' . $p['city'] . ' ' . $p['quartier']),
-            prospect_source_label($p['source']), trim(($p['agent_first_name'] ?? '') . ' ' . ($p['agent_last_name'] ?? '')), $p['status'], $p['created_at'],
+        csv_download('prospects.csv', ['Identifiant', 'Nom', 'Téléphone', 'WhatsApp', 'E-mail', 'Type', 'Province', 'Ville', 'Quartier', 'Bien', 'Chambres', 'Budget min', 'Budget max', 'Source', 'Responsable', 'Statut', 'Soumis le'], array_map(fn($p) => [
+            prospect_reference($p), full_name($p), $p['phone'], $p['whatsapp'], $p['email'], prospect_type_label($p['type']),
+            $p['province'], $p['city'], $p['quartier'],
+            property_types()[$p['property_type']] ?? $p['property_type'], $p['bedrooms'], $p['budget_min'], $p['budget_max'],
+            prospect_source_label($p['source']), crm_responsible_name($p), prospect_status_label($p['status']), $p['created_at'],
         ], $items));
     }
+    $statusOptions = prospect_statuses();
     $rows = [];
     foreach ($items as $p) {
-        $responsible = trim(($p['agent_first_name'] ?? '') . ' ' . ($p['agent_last_name'] ?? ''));
+        $responsible = crm_responsible_name($p);
         $statusForm = '<form method="post" action="' . e(base_url('app/prospects/' . $p['id'] . '/statut')) . '" class="row-actions">'
             . csrf_field()
             . '<select name="status" aria-label="Nouveau statut">';
-        foreach (prospect_statuses($p['type']) as $statusKey => $statusLabel) {
-            $statusForm .= '<option value="' . e($statusKey) . '"' . ($p['status'] === $statusKey ? ' selected' : '') . '>' . e($statusLabel) . '</option>';
+        foreach ($statusOptions as $statusKey => $statusLabel) {
+            $statusForm .= '<option value="' . e($statusKey) . '"' . (prospect_status_normalize($p['status']) === $statusKey ? ' selected' : '') . '>' . e($statusLabel) . '</option>';
         }
         $statusForm .= '</select><button class="btn btn-sm">Mettre à jour</button></form>';
+
+        if ($type === 'proprietaire') {
+            // §15 — colonnes Propriétaires potentiels
+            $rows[] = [
+                a_link('app/prospects/' . $p['id'], prospect_reference($p) . ' · ' . (full_name($p) ?: 'Sans nom')),
+                crm_contact_actions($p),
+                e(trim(($p['city'] ?? '') . ' · ' . ($p['quartier'] ?? ''), ' ·')),
+                e(property_types()[$p['property_type']] ?? $p['property_type'] ?: '—'),
+                e(!empty($p['budget_max']) ? money($p['budget_max'], 'USD') . '/mois' : '—'),
+                e(management_type_label($p['management_type'] ?? null)),
+                e($p['availability'] ?: ($p['desired_date'] ? dfr($p['desired_date']) : '—')),
+                status_badge($p['status']),
+                e($responsible ?: 'Non attribué'),
+                $statusForm,
+            ];
+            continue;
+        }
+        if ($type === 'locataire') {
+            // §16 — colonnes Locataires potentiels
+            $rows[] = [
+                a_link('app/prospects/' . $p['id'], prospect_reference($p) . ' · ' . (full_name($p) ?: 'Sans nom')),
+                crm_contact_actions($p),
+                e(trim(($p['city'] ?? '') . ' · ' . ($p['quartier'] ?? ''), ' ·')),
+                e(property_types()[$p['property_type']] ?? $p['property_type'] ?: 'Indifférent'),
+                e(!empty($p['budget_max']) ? money($p['budget_max'], 'USD') : '—'),
+                e((int) ($p['bedrooms'] ?? 0) ?: '—'),
+                e(!empty($p['furnished']) ? 'Meublé' : 'Non meublé'),
+                e($p['desired_date'] ? dfr($p['desired_date']) : '—'),
+                status_badge($p['status']),
+                e($responsible ?: 'Non attribué'),
+                $statusForm,
+            ];
+            continue;
+        }
         $rows[] = [
-            a_link('app/prospects/' . $p['id'], full_name($p) ?: 'Sans nom'),
-            e($p['phone']) . ($p['email'] ? '<br><span class="muted">' . e($p['email']) . '</span>' : ''),
+            a_link('app/prospects/' . $p['id'], prospect_reference($p) . ' · ' . (full_name($p) ?: 'Sans nom')),
+            crm_contact_actions($p),
             e(prospect_type_label($p['type'])),
             e(trim(($p['province'] ?? '') . ' · ' . $p['city'] . ' · ' . $p['quartier'], ' ·')),
             e(property_types()[$p['property_type']] ?? $p['property_type']),
@@ -420,16 +504,28 @@ function app_prospects(): void
         ];
     }
     $title = $type === 'proprietaire' ? 'Propriétaires potentiels' : ($type === 'locataire' ? 'Locataires potentiels' : 'Tous les prospects CRM');
-    $statuses = $type ? prospect_statuses($type) : (prospect_statuses('proprietaire') + prospect_statuses('locataire'));
-    list_page($title, ['Prospect', 'Contact', 'Type', 'Zone', 'Bien', 'Source', 'Responsable', 'Statut', 'Soumis le', 'Changer le statut'], $rows, [
+    $cols = $type === 'proprietaire'
+        ? ['Prospect', 'Téléphone', 'Ville', 'Type de bien', 'Loyer souhaité', 'Besoin', 'Disponibilité', 'Statut', 'Responsable', 'Changer le statut']
+        : ($type === 'locataire'
+            ? ['Prospect', 'Téléphone', 'Ville', 'Recherche', 'Budget max.', 'Chambres', 'Meublé', 'Date souhaitée', 'Statut', 'Responsable', 'Changer le statut']
+            : ['Prospect', 'Téléphone', 'Type', 'Zone', 'Bien', 'Source', 'Responsable', 'Statut', 'Soumis le', 'Changer le statut']);
+    list_page($title, $cols, $rows, [
         'kicker' => 'CRM · Site public → suivi → conversion',
         'create' => 'app/prospects/nouveau' . ($type ? '?type=' . rawurlencode($type) : ''),
         'createLabel' => 'Nouveau prospect', 'export' => true, 'pg' => $pg,
+        'extraTop' => crm_kpis_html() . crm_alerts_html(),
         'filters' => [
-            'q' => ['type' => 'text', 'label' => 'Nom, téléphone ou e-mail'],
+            'q' => ['type' => 'text', 'label' => 'Nom, identifiant, téléphone ou e-mail'],
             'type' => ['' => 'Type', 'locataire' => 'Locataire potentiel', 'proprietaire' => 'Propriétaire potentiel'],
+            'status' => ['' => 'Statut'] + $statusOptions,
             'province' => ['' => 'Province'] + provinces_rdc(),
-            'status' => ['' => 'Statut'] + $statuses,
+            'city' => ['' => 'Ville'] + array_combine(cities(), cities()),
+            'property_type' => ['' => 'Type de bien'] + property_types(),
+            'source' => ['' => 'Source'] + prospect_sources(),
+            'agent_id' => ['' => 'Responsable', '-1' => 'Sans responsable'] + crm_responsible_options_named(),
+            'budget_max' => ['type' => 'text', 'label' => 'Budget au moins (USD)'],
+            'date_from' => ['type' => 'text', 'label' => 'Créé depuis (AAAA-MM-JJ)'],
+            'date_to' => ['type' => 'text', 'label' => 'Créé jusqu’au (AAAA-MM-JJ)'],
         ],
     ]);
 }
@@ -497,10 +593,11 @@ function app_prospect_form(?int $id = null): void
         csrf_verify();
         try {
             $phone = str_input('phone');
-            if (!$id && $phone !== '') {
-                $dup = db()->one('SELECT id, first_name FROM prospects WHERE phone = ? AND type = ?', [$phone, str_input('type')]);
+            if (!$id) {
+                // §10 — anti-doublon sur téléphone, WhatsApp et e-mail.
+                $dup = crm_find_contact(str_input('type') === 'proprietaire' ? 'proprietaire' : 'locataire', $phone, str_input('whatsapp'), str_input('email'));
                 if ($dup) {
-                    flash('error', 'Prospect déjà existant (tél. ' . $phone . ') — dossier #' . $dup['id'] . '. Doublon évité.');
+                    flash('error', 'Prospect déjà existant — dossier ' . prospect_reference($dup) . ' (' . full_name($dup) . '). Aucune fiche en double n’a été créée.');
                     redirect('app/prospects/' . $dup['id']);
                 }
             }
@@ -543,9 +640,13 @@ function app_prospect_form(?int $id = null): void
                 $data['agent_id'] = int_input('agent_id') ?: null;
             }
             if (!$id) {
-                $data['source'] = 'agent';
+                // §18 — source standardisée (téléphone, WhatsApp, bureau, Facebook…).
+                $source = str_input('source');
+                $data['source'] = array_key_exists($source, prospect_sources()) ? $source : 'bureau';
                 $data['created_at'] = now();
                 $id = insert_existing('prospects', $data);
+                // §11 — identifiant PROP-00001 / LOC-00001.
+                prospect_assign_reference($id, $type);
                 record_prospect_status($id, null, $status, 'Prospect créé dans le CRM.');
                 log_activity('prospect_cree', 'prospects', $id);
             } else {
@@ -597,6 +698,7 @@ function app_prospect_form(?int $id = null): void
     echo fld('desired_date', 'Date souhaitée / disponibilité', 'date', $p['desired_date'] ?? '');
     echo fld('duration', 'Durée souhaitée', 'text', $p['duration'] ?? '');
     echo sel('management_type', ['' => '—', 'mise_en_location'=>'Mise en location', 'gestion_locative'=>'Gestion locative', 'courte_duree'=>'Location courte durée'], $p['management_type'] ?? '', 'Besoin propriétaire');
+    echo sel('source', ['' => '—'] + prospect_sources(), prospect_source_normalize($p['source'] ?? null), 'Source du prospect');
     echo fld('availability', 'Disponibilité du bien', 'text', $p['availability'] ?? '');
     echo fld('property_description', 'Description du bien', 'textarea', $p['property_description'] ?? '', 'full');
     echo fld('criteria', 'Critères particuliers', 'textarea', $p['criteria'] ?? '', 'full');
@@ -606,12 +708,61 @@ function app_prospect_form(?int $id = null): void
     }
     echo fld('notes', 'Notes internes', 'textarea', $p['notes'] ?? '', 'full');
     echo fld('new_note', 'Ajouter un suivi', 'textarea', '', 'full');
+    // §17 — les champs affichés changent selon le type de prospect sélectionné.
+    echo '<script>
+    (function () {
+      var form = document.currentScript.closest("form") || document;
+      var typeSel = form.querySelector("[name=type]");
+      if (!typeSel) { return; }
+      var ownerOnly = ["management_type", "availability", "property_description"];
+      var tenantOnly = ["budget_min", "furnished", "duration", "criteria"];
+      function apply() {
+        var t = typeSel.value;
+        ownerOnly.concat(tenantOnly).forEach(function (name) {
+          var input = form.querySelector("[name=" + name + "]");
+          if (!input) { return; }
+          var wrap = input.closest("label.fld") || input;
+          var show = (t === "proprietaire") ? ownerOnly.indexOf(name) >= 0 : tenantOnly.indexOf(name) >= 0;
+          wrap.style.display = show ? "" : "none";
+          if (!show) { input.removeAttribute("required"); }
+        });
+      }
+      typeSel.addEventListener("change", apply);
+      apply();
+    })();
+    </script>';
     $fields = ob_get_clean();
 
     $extra = '';
     if ($p) {
         $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Origine et conversion</h3>';
-        $extra .= '<p><strong>Source :</strong> ' . e(prospect_source_label($p['source'] ?? '')) . '<br><strong>Soumis le :</strong> ' . e(dfr($p['created_at'] ?? null, 'd/m/Y H:i')) . '</p>';
+        $extra .= '<p><strong>Identifiant :</strong> ' . e(prospect_reference($p))
+            . '<br><strong>Source :</strong> ' . e(prospect_source_label($p['source'] ?? ''))
+            . '<br><strong>Responsable du dossier :</strong> ' . e(crm_responsible_name($p) ?: 'Non attribué')
+            . '<br><strong>Soumis le :</strong> ' . e(dfr($p['created_at'] ?? null, 'd/m/Y H:i')) . '</p>';
+        // §8 — actions rapides
+        $extra .= '<div class="row-actions" style="margin:10px 0">' . crm_contact_actions($p)
+            . '<a class="btn btn-sm btn-gold" href="' . e(base_url('app/prospects/' . $p['id'] . '/matching')) . '">Biens compatibles</a>'
+            . '</div>';
+        // §8 — affectation du responsable
+        $extra .= crm_assign_form((int) $p['id'], (int) ($p['agent_id'] ?? 0));
+
+        // §5 — photos et documents joints au dossier (photos du bien confié).
+        $docs = qtry_all("SELECT * FROM documents WHERE entity = 'prospects' AND entity_id = ? ORDER BY id", [(int) $p['id']]);
+        if ($docs) {
+            $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Photos et pièces du dossier</h3><div class="crm-docs">';
+            foreach ($docs as $doc) {
+                $path = (string) ($doc['path'] ?? '');
+                if (photo_exists($path)) {
+                    $extra .= '<figure class="crm-doc"><a href="' . e(upload_url($path)) . '" target="_blank" rel="noopener">'
+                        . '<img src="' . e(photo_url($path)) . '" alt="' . e($doc['title'] ?: 'Pièce jointe') . '" loading="lazy"></a>'
+                        . '<figcaption>' . e($doc['title'] ?: 'Pièce jointe') . '</figcaption></figure>';
+                } else {
+                    $extra .= '<p class="muted">' . e($doc['title'] ?: 'Pièce jointe') . ' — fichier introuvable sur le serveur</p>';
+                }
+            }
+            $extra .= '</div></div>';
+        }
         if (!empty($p['converted_to']) && !empty($p['converted_id'])) {
             $url = $p['converted_to'] === 'owner' ? 'app/proprietaires/' : 'app/locataires/';
             $extra .= '<p><span class="badge badge-ok">Déjà converti</span> <a href="' . e(base_url($url . $p['converted_id'])) . '">Ouvrir la fiche créée</a></p>';
@@ -621,25 +772,35 @@ function app_prospect_form(?int $id = null): void
             $extra .= post_btn_confirm('app/prospects/' . $p['id'] . '/convertir-locataire', 'Convertir en locataire', 'Créer la fiche locataire à partir de ce prospect ?', 'btn btn-gold');
         }
         $extra .= '</div>';
+
+        // §8 / §9 — nouvelle interaction tracée
+        $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Ajouter une interaction</h3>'
+            . crm_interaction_form((int) $p['id'])
+            . '<p class="muted">Appels, WhatsApp, e-mails, notes, rendez-vous et visites sont horodatés et signés.</p></div>';
+
+        // §19 / §20 — rapprochement automatique
+        $extra .= crm_matching_panel($p);
+
+        // §21 — biens déjà proposés
+        $extra .= crm_proposals_panel((int) $p['id']);
     }
-    if ($notes) {
-        $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Suivi commercial</h3>';
-        foreach ($notes as $note) {
-            $author = full_name($note) ?: 'Site public';
-            $extra .= '<p><strong>' . e($author) . '</strong> · ' . e(dfr($note['created_at'], 'd/m/Y H:i')) . '<br>' . nl2br(e($note['body'])) . '</p>';
+
+    // §9 — historique unifié des interactions
+    $timeline = $id ? crm_timeline((int) $id) : [];
+    if ($timeline) {
+        $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Historique des interactions</h3><ul class="crm-timeline">';
+        foreach ($timeline as $event) {
+            $extra .= '<li><span class="crm-kind">' . e(crm_interaction_label($event['kind'])) . '</span>'
+                . '<span class="crm-at">' . e(dfr($event['at'], 'd/m/Y H:i')) . '</span>'
+                . '<span class="crm-by">' . e($event['user']) . '</span>'
+                . '<div>' . nl2br(e($event['body'])) . '</div></li>';
         }
-        $extra .= '</div>';
+        $extra .= '</ul></div>';
     }
-    if ($history) {
-        $extra .= '<div class="panel" style="margin-top:16px;max-width:920px"><h3>Historique des statuts</h3>';
-        foreach ($history as $entry) {
-            $extra .= '<p>' . status_badge($entry['new_status']) . ' · ' . e(dfr($entry['created_at'], 'd/m/Y H:i'));
-            if (!empty($entry['note'])) { $extra .= '<br>' . e($entry['note']); }
-            $extra .= '</p>';
-        }
-        $extra .= '</div>';
-    }
-    view('app/form', ['title' => $p ? 'Dossier prospect · ' . full_name($p) : 'Nouveau prospect', 'fields' => $fields, 'back' => 'app/prospects', 'extra' => $extra], 'app');
+    view('app/form', [
+        'title' => $p ? 'Dossier prospect · ' . prospect_reference($p) . ' · ' . full_name($p) : 'Nouveau prospect',
+        'fields' => $fields, 'back' => 'app/prospects', 'extra' => $extra,
+    ], 'app');
 }
 
 function app_prospect_convert(int $id, string $target): void

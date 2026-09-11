@@ -569,11 +569,11 @@ function public_confier_bien(): void
             redirect('confier-mon-bien');
         }
         [$firstName, $lastName] = split_full_name($name);
-        $dup = db()->one(
-            "SELECT * FROM prospects WHERE type = 'proprietaire' AND phone = ? AND (converted_to IS NULL OR converted_to = '') ORDER BY id DESC LIMIT 1",
-            [$phone]
-        );
-        $status = ($dup['status'] ?? '') === 'non_abouti' ? 'nouveau' : ($dup['status'] ?? 'nouveau');
+        // §10 — anti-doublon sur téléphone, WhatsApp et e-mail.
+        $dup = crm_find_contact('proprietaire', $phone, str_input('whatsapp'), str_input('email'));
+        $status = in_array(prospect_status_normalize($dup['status'] ?? null), ['perdu', 'non_interesse'], true)
+            ? 'nouveau'
+            : prospect_status_normalize($dup['status'] ?? 'nouveau');
         $data = [
             'type' => 'proprietaire',
             'first_name' => $firstName,
@@ -592,26 +592,28 @@ function public_confier_bien(): void
             'availability' => str_input('dispo'),
             'desired_date' => str_input('dispo') ?: null,
             'message' => str_input('message'),
-            'source' => 'site_je_suis_proprietaire',
-            'agent_id' => !empty($dup['agent_id']) ? (int) $dup['agent_id'] : next_public_prospect_agent_id(),
+            // §18 — source standardisée « Site web — Confier mon bien ».
+            'source' => 'site_confier_mon_bien',
+            // §7 — responsable conservé si le contact existe, sinon affectation automatique.
+            'agent_id' => !empty($dup['agent_id'])
+                ? (int) $dup['agent_id']
+                : crm_auto_assign('proprietaire', $location['city'], $location['province']),
             'status' => $status,
             'updated_at' => now(),
         ];
         if ($dup) {
             $pid = (int) $dup['id'];
             update_existing('prospects', $data, 'id = ?', [$pid]);
-            insert_existing('prospect_notes', [
-                'prospect_id' => $pid,
-                'user_id' => null,
-                'body' => 'Nouvelle soumission du formulaire « Je suis propriétaire ».' . (str_input('message') ? "\n" . str_input('message') : ''),
-                'created_at' => now(),
-            ]);
-            if (($dup['status'] ?? '') !== $status) {
+            crm_log_interaction($pid, 'formulaire', 'Nouvelle soumission du formulaire « Je suis propriétaire ».'
+                . (str_input('message') ? "\n" . str_input('message') : ''));
+            if (prospect_status_normalize($dup['status'] ?? null) !== $status) {
                 record_prospect_status($pid, $dup['status'] ?? null, $status, 'Nouvelle demande depuis le site public.');
             }
         } else {
             $data['created_at'] = now();
             $pid = insert_existing('prospects', $data);
+            // §11 — identifiant PROP-00001.
+            prospect_assign_reference($pid, 'proprietaire');
             record_prospect_status($pid, null, 'nouveau', 'Créé automatiquement depuis le formulaire public.');
         }
         try {
@@ -624,10 +626,12 @@ function public_confier_bien(): void
         } catch (Throwable $e) {
             flash('error', 'La demande est enregistrée, mais certaines photos n’ont pas pu être ajoutées.');
         }
-        notify_staff_new_prospect($pid, 'proprietaire', $name);
+        // §12 — notification équipe : « Nouveau propriétaire potentiel — Goma — Villa ».
+        notify_staff_new_prospect($pid, 'proprietaire', $name, $location['city'], property_types()[str_input('type')] ?? str_input('type'));
         log_activity('prospect_proprietaire_site', 'prospects', $pid);
         clear_old();
-        flash('success', 'Merci. Votre demande est enregistrée dans notre CRM et un agent YOUPENDI vous contactera.');
+        // §13 — message automatique au client.
+        flash('success', 'Merci d’avoir confié votre bien à YOUPENDI IMMO SELECT. Notre équipe a bien reçu votre demande et vous contactera pour la suite du processus.');
         redirect('confier-mon-bien');
     }
     ob_start(); ?>
@@ -677,11 +681,11 @@ function public_confier_recherche(): void
             redirect('confier-ma-recherche');
         }
         [$firstName, $lastName] = split_full_name($name);
-        $dup = db()->one(
-            "SELECT * FROM prospects WHERE type = 'locataire' AND phone = ? AND (converted_to IS NULL OR converted_to = '') ORDER BY id DESC LIMIT 1",
-            [$phone]
-        );
-        $status = ($dup['status'] ?? '') === 'non_abouti' ? 'nouveau' : ($dup['status'] ?? 'nouveau');
+        // §10 — anti-doublon sur téléphone, WhatsApp et e-mail.
+        $dup = crm_find_contact('locataire', $phone, str_input('whatsapp'), str_input('email'));
+        $status = in_array(prospect_status_normalize($dup['status'] ?? null), ['perdu', 'non_interesse'], true)
+            ? 'nouveau'
+            : prospect_status_normalize($dup['status'] ?? 'nouveau');
         $data = [
             'type' => 'locataire',
             'first_name' => $firstName ?: 'Prospect',
@@ -701,32 +705,44 @@ function public_confier_recherche(): void
             'duration' => str_input('duree'),
             'criteria' => str_input('criteres'),
             'message' => str_input('message'),
-            'source' => 'site_je_cherche_logement',
-            'agent_id' => !empty($dup['agent_id']) ? (int) $dup['agent_id'] : next_public_prospect_agent_id(),
+            // §18 — source standardisée « Site web — Confier ma recherche ».
+            'source' => 'site_confier_ma_recherche',
+            // §7 — affectation automatique par ville puis province.
+            'agent_id' => !empty($dup['agent_id'])
+                ? (int) $dup['agent_id']
+                : crm_auto_assign('locataire', $location['city'], $location['province']),
             'status' => $status,
             'updated_at' => now(),
         ];
         if ($dup) {
             $pid = (int) $dup['id'];
             update_existing('prospects', $data, 'id = ?', [$pid]);
-            insert_existing('prospect_notes', [
-                'prospect_id' => $pid,
-                'user_id' => null,
-                'body' => 'Nouvelle soumission du formulaire « Je cherche un logement ».' . (str_input('message') ? "\n" . str_input('message') : ''),
-                'created_at' => now(),
-            ]);
-            if (($dup['status'] ?? '') !== $status) {
+            crm_log_interaction($pid, 'formulaire', 'Nouvelle soumission du formulaire « Je cherche un logement ».'
+                . (str_input('message') ? "\n" . str_input('message') : ''));
+            if (prospect_status_normalize($dup['status'] ?? null) !== $status) {
                 record_prospect_status($pid, $dup['status'] ?? null, $status, 'Nouvelle recherche depuis le site public.');
             }
         } else {
             $data['created_at'] = now();
             $pid = insert_existing('prospects', $data);
+            // §11 — identifiant LOC-00001.
+            prospect_assign_reference($pid, 'locataire');
             record_prospect_status($pid, null, 'nouveau', 'Créé automatiquement depuis le formulaire public.');
         }
-        notify_staff_new_prospect($pid, 'locataire', $name);
+        // §12 — « Nouveau locataire potentiel — Kinshasa — Appartement — Budget 800 USD ».
+        $budget = float_input('budget_max');
+        notify_staff_new_prospect(
+            $pid,
+            'locataire',
+            $name,
+            $location['city'],
+            trim((property_types()[str_input('type')] ?? str_input('type'))
+                . ($budget > 0 ? ' — Budget ' . money($budget) : ''))
+        );
         log_activity('prospect_locataire_site', 'prospects', $pid);
         clear_old();
-        flash('success', 'Votre recherche est enregistrée dans notre CRM. Un agent vous proposera des biens adaptés.');
+        // §13 — message automatique au client.
+        flash('success', 'Merci d’avoir confié votre recherche à YOUPENDI IMMO SELECT. Notre équipe analysera vos critères afin de vous proposer des biens adaptés.');
         redirect('confier-ma-recherche');
     }
     ob_start(); ?>

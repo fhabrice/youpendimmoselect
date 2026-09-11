@@ -16,6 +16,7 @@ if (in_array($role, ['admin','finance','manager','supervisor','agent'], true)) {
     }
     if (can('prospects.*') || can('prospects.own')) {
         $menu[] = ['group', 'CRM', [
+            ['app/crm', 'Tableau de bord CRM'],
             ['app/prospects', 'Tous les prospects'],
             ['app/prospects?type=proprietaire', 'Propriétaires potentiels'],
             ['app/prospects?type=locataire', 'Locataires potentiels'],

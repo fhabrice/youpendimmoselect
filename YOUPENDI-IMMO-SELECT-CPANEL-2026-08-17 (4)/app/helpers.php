@@ -50,6 +50,159 @@ function upload_url(string $path): string
     return base_url('uploads/' . ltrim($path, '/'));
 }
 
+/** Dossier physique des ressources statiques fournies avec le paquet. */
+function asset_dir(): string
+{
+    return rtrim(str_replace('\\', '/', dirname(__DIR__) . '/public/assets'), '/');
+}
+
+/** Dossier physique des fichiers téléversés (photos, PDF, avatars). */
+function upload_root(): string
+{
+    $dir = trim((string) config('upload.dir', ''));
+    if ($dir === '') {
+        $dir = dirname(__DIR__) . '/public/uploads';
+    }
+    return rtrim(str_replace('\\', '/', $dir), '/');
+}
+
+/** Chemin disque d'un asset du paquet, ou null s'il est absent. */
+function asset_file(?string $path): ?string
+{
+    $rel = ltrim(str_replace('\\', '/', trim((string) $path)), '/');
+    if ($rel === '' || str_contains($rel, '..')) {
+        return null;
+    }
+    $file = asset_dir() . '/' . $rel;
+    return is_file($file) && is_readable($file) ? $file : null;
+}
+
+/** Vrai si l'asset du paquet existe sur le disque. */
+function asset_exists(string $path): bool
+{
+    return asset_file($path) !== null;
+}
+
+/**
+ * Normalise un chemin de fichier téléversé tel qu'il est stocké en base.
+ * Tolère les anciennes variantes : "uploads/x.jpg", "/uploads/x.jpg",
+ * "../uploads/x.jpg", "public/uploads/x.jpg" ou un chemin absolu.
+ * Retourne le chemin relatif au dossier de téléversement, ou null si le
+ * fichier est introuvable (ou tente d'en sortir).
+ */
+function upload_relative(?string $path): ?string
+{
+    $raw = str_replace('\\', '/', trim((string) $path));
+    if ($raw === '' || preg_match('#^(https?:)?//#i', $raw) || str_starts_with($raw, 'data:')) {
+        return null;
+    }
+    $root = upload_root();
+    // Chemin absolu déjà complet (anciens imports).
+    if (str_starts_with($raw, '/') && str_starts_with($raw, $root . '/')) {
+        $rel = substr($raw, strlen($root) + 1);
+    } else {
+        $rel = ltrim($raw, '/');
+        foreach ([
+            '../public/uploads/', 'public/uploads/', '../uploads/', 'uploads/',
+            '/youpendimmoselect/public/uploads/',
+        ] as $prefix) {
+            if (str_starts_with($rel, $prefix)) {
+                $rel = substr($rel, strlen($prefix));
+                break;
+            }
+        }
+    }
+    $rel = ltrim($rel, '/');
+    if ($rel === '' || str_contains($rel, '..')) {
+        return null;
+    }
+    $file = $root . '/' . $rel;
+    return is_file($file) && is_readable($file) ? $rel : null;
+}
+
+/** Chemin disque d'un fichier téléversé, ou null s'il est absent du serveur. */
+function upload_file(?string $path): ?string
+{
+    $rel = upload_relative($path);
+    return $rel === null ? null : upload_root() . '/' . $rel;
+}
+
+/** Image de substitution affichée quand une photo est absente du serveur. */
+function photo_placeholder(): string
+{
+    return asset_exists('img/photo-missing.svg') ? asset('img/photo-missing.svg') : asset('img/p1.jpg');
+}
+
+/** Image de substitution pour un agent sans photo valide. */
+function agent_placeholder(): string
+{
+    return asset_exists('img/agent-placeholder.svg') ? asset('img/agent-placeholder.svg') : photo_placeholder();
+}
+
+/**
+ * Sert un fichier statique depuis un dossier de l'application.
+ *
+ * Sert de filet de sécurité : même sans règle de réécriture sur l'hébergeur,
+ * /assets/... et /uploads/... restent accessibles parce que le contrôleur
+ * frontal connaît le vrai chemin des fichiers sur le disque.
+ */
+function serve_public_file(string $root, string $rel, bool $isUpload = false): never
+{
+    $root = rtrim(str_replace('\\', '/', $root), '/');
+    $rel = ltrim(str_replace('\\', '/', rawurldecode($rel)), '/');
+
+    $file = null;
+    if ($rel !== '' && !str_contains($rel, '..')) {
+        $candidate = $root . '/' . $rel;
+        $realRoot = realpath($root);
+        $real = realpath($candidate);
+        if ($real !== false && $realRoot !== false && is_file($real) && is_readable($real)
+            && str_starts_with($real, $realRoot)) {
+            $file = $real;
+        }
+    }
+
+    if ($file === null) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Cache-Control: no-store');
+        echo 'Fichier introuvable.';
+        exit;
+    }
+
+    $types = [
+        'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+        'webp' => 'image/webp', 'gif' => 'image/gif', 'svg' => 'image/svg+xml',
+        'ico' => 'image/x-icon', 'avif' => 'image/avif',
+        'css' => 'text/css; charset=utf-8', 'js' => 'application/javascript; charset=utf-8',
+        'json' => 'application/json; charset=utf-8', 'txt' => 'text/plain; charset=utf-8',
+        'pdf' => 'application/pdf', 'woff' => 'font/woff', 'woff2' => 'font/woff2',
+    ];
+    $ext = strtolower((string) pathinfo($file, PATHINFO_EXTENSION));
+    $mime = $types[$ext] ?? 'application/octet-stream';
+    $size = (int) filesize($file);
+    $mtime = (int) filemtime($file);
+    $etag = '"' . md5($file . '|' . $size . '|' . $mtime) . '"';
+
+    if (trim((string) ($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+        http_response_code(304);
+        header('ETag: ' . $etag);
+        exit;
+    }
+
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . $size);
+    header('Last-Modified: ' . gmdate('D, d M Y H:i:s', $mtime) . ' GMT');
+    header('ETag: ' . $etag);
+    header('Cache-Control: public, max-age=' . ($isUpload ? 86400 : 604800));
+    header('X-Content-Type-Options: nosniff');
+    if (!str_starts_with($mime, 'image/')) {
+        header('Content-Disposition: inline; filename="' . basename($file) . '"');
+    }
+    readfile($file);
+    exit;
+}
+
 function redirect(string $to, int $code = 302): never
 {
     if (!preg_match('#^https?://#', $to)) {
@@ -321,29 +474,67 @@ function property_statuses(): array
     ];
 }
 
-function prospect_statuses(string $type): array
+/**
+ * Statuts CRM unifiés (cahier des charges §6).
+ * Le paramètre $type est conservé pour la compatibilité des appels existants.
+ */
+function prospect_statuses(string $type = 'locataire'): array
 {
-    if ($type === 'proprietaire') {
-        return [
-            'nouveau' => 'Nouveau',
-            'contacte' => 'Contacté',
-            'rendez_vous_fixe' => 'Rendez-vous fixé',
-            'bien_a_visiter' => 'Bien à visiter',
-            'proposition_envoyee' => 'Proposition envoyée',
-            'converti' => 'Converti',
-            'non_abouti' => 'Non abouti',
-        ];
-    }
     return [
         'nouveau' => 'Nouveau',
+        'a_contacter' => 'À contacter',
         'contacte' => 'Contacté',
-        'recherche_en_cours' => 'Recherche en cours',
-        'biens_proposes' => 'Biens proposés',
-        'visite_programmee' => 'Visite programmée',
-        'visite_effectuee' => 'Visite effectuée',
+        'qualifie' => 'Qualifié',
+        'en_traitement' => 'En traitement',
+        'rdv_prevu' => 'Rendez-vous prévu',
+        'visite_prevue' => 'Visite prévue',
+        'negociation' => 'Négociation',
         'converti' => 'Converti',
-        'non_abouti' => 'Non abouti',
+        'non_interesse' => 'Non intéressé',
+        'perdu' => 'Perdu',
     ];
+}
+
+/**
+ * Correspondance des anciens statuts vers les statuts unifiés.
+ * Sert à la migration et à l'affichage des dossiers historiques.
+ */
+function prospect_status_legacy_map(): array
+{
+    return [
+        'rendez_vous_fixe' => 'rdv_prevu',
+        'bien_a_visiter' => 'en_traitement',
+        'proposition_envoyee' => 'negociation',
+        'recherche_en_cours' => 'en_traitement',
+        'biens_proposes' => 'negociation',
+        'visite_programmee' => 'visite_prevue',
+        'visite_effectuee' => 'negociation',
+        'non_abouti' => 'perdu',
+    ];
+}
+
+/** Ramène un statut historique à son équivalent unifié. */
+function prospect_status_normalize(?string $status): string
+{
+    $status = (string) $status;
+    if ($status === '') {
+        return 'nouveau';
+    }
+    $map = prospect_status_legacy_map();
+    return $map[$status] ?? $status;
+}
+
+/** Libellé d'un statut, y compris pour les valeurs historiques non migrées. */
+function prospect_status_label(?string $status): string
+{
+    $normalized = prospect_status_normalize($status);
+    return prospect_statuses()[$normalized] ?? ucfirst(str_replace('_', ' ', $normalized));
+}
+
+/** Statuts considérés comme « dossier ouvert » (ni gagné ni perdu). */
+function prospect_open_statuses(): array
+{
+    return ['nouveau', 'a_contacter', 'contacte', 'qualifie', 'en_traitement', 'rdv_prevu', 'visite_prevue', 'negociation'];
 }
 
 function visit_statuses(): array
@@ -363,15 +554,58 @@ function prospect_type_label(string $type): string
     return $type === 'proprietaire' ? 'Propriétaire potentiel' : 'Locataire potentiel';
 }
 
+/**
+ * Sources de prospect standardisées (cahier des charges §18).
+ * Les clés historiques restent acceptées pour ne casser aucune donnée existante.
+ */
+function prospect_sources(): array
+{
+    return [
+        'site_confier_mon_bien' => 'Site web — Confier mon bien',
+        'site_confier_ma_recherche' => 'Site web — Confier ma recherche',
+        'facebook' => 'Facebook',
+        'instagram' => 'Instagram',
+        'whatsapp' => 'WhatsApp',
+        'telephone' => 'Téléphone',
+        'bureau' => 'Bureau',
+        'recommandation' => 'Recommandation',
+        'partenaire' => 'Partenaire',
+        'evenement' => 'Événement',
+        'autre' => 'Autre',
+    ];
+}
+
+/** Anciennes clés de source → clés standardisées. */
+function prospect_source_legacy_map(): array
+{
+    return [
+        'site_je_suis_proprietaire' => 'site_confier_mon_bien',
+        'site_je_cherche_logement' => 'site_confier_ma_recherche',
+        'site' => 'autre',
+        'agent' => 'bureau',
+    ];
+}
+
 function prospect_source_label(?string $source): string
 {
-    return match ((string) $source) {
-        'site_je_suis_proprietaire' => 'Site web – Je suis propriétaire',
-        'site_je_cherche_logement' => 'Site web – Je cherche un logement',
-        'site' => 'Site web',
-        'agent' => 'Saisie par un agent',
-        default => $source ?: '—',
-    };
+    $source = (string) $source;
+    if ($source === '') {
+        return '—';
+    }
+    $map = prospect_source_legacy_map();
+    $normalized = $map[$source] ?? $source;
+    return prospect_sources()[$normalized] ?? ucfirst(str_replace('_', ' ', $normalized));
+}
+
+/** Ramène une source historique à sa clé standardisée. */
+function prospect_source_normalize(?string $source): string
+{
+    $source = (string) $source;
+    if ($source === '') {
+        return 'autre';
+    }
+    $map = prospect_source_legacy_map();
+    return $map[$source] ?? $source;
 }
 
 function contract_statuses(): array
@@ -563,6 +797,10 @@ function status_badge(string $status): string
         'rendez_vous_fixe' => 'warn', 'bien_a_visiter' => 'warn', 'proposition_envoyee' => 'navy',
         'recherche_en_cours' => 'info', 'biens_proposes' => 'navy', 'visite_programmee' => 'warn',
         'visite_effectuee' => 'ok', 'converti' => 'ok', 'non_abouti' => 'muted', 'perdu' => 'muted',
+        // Statuts CRM unifiés (cahier des charges §6)
+        'a_contacter' => 'warn', 'qualifie' => 'navy', 'en_traitement' => 'info',
+        'rdv_prevu' => 'warn', 'visite_prevue' => 'warn', 'negociation' => 'navy',
+        'non_interesse' => 'muted',
         'termine' => 'muted', 'resilie' => 'danger',
         'planifiee' => 'info', 'confirmee' => 'navy', 'reportee' => 'warn', 'realisee' => 'ok', 'annulee' => 'muted', 'no_show' => 'warn',
         'generee' => 'info', 'validee' => 'ok', 'payable' => 'warn', 'payee' => 'ok',
@@ -583,6 +821,9 @@ function status_badge(string $status): string
             'biens_proposes' => 'Biens proposés', 'visite_programmee' => 'Visite programmée',
             'visite_effectuee' => 'Visite effectuée', 'converti' => 'Converti',
             'non_abouti' => 'Non abouti', 'perdu' => 'Perdu', 'termine' => 'Terminé', 'resilie' => 'Résilié',
+            'a_contacter' => 'À contacter', 'qualifie' => 'Qualifié', 'en_traitement' => 'En traitement',
+            'rdv_prevu' => 'Rendez-vous prévu', 'visite_prevue' => 'Visite prévue', 'negociation' => 'Négociation',
+            'non_interesse' => 'Non intéressé',
             'planifiee' => 'Planifiée', 'confirmee' => 'Confirmée', 'reportee' => 'Reportée', 'realisee' => 'Réalisée', 'annulee' => 'Annulée', 'no_show' => 'Absent',
             'generee' => 'Générée', 'validee' => 'Validée', 'payable' => 'Payable', 'payee' => 'Payée',
             'a_preparer' => 'À préparer', 'demande' => 'Demande', 'confirmee' => 'Confirmée',
@@ -663,14 +904,31 @@ function next_public_prospect_agent_id(): ?int
     return $bestId;
 }
 
-function notify_staff_new_prospect(int $prospectId, string $type, string $name): void
+/**
+ * §12 — Notifie l'équipe d'un nouveau prospect.
+ * Titre enrichi : « Nouveau propriétaire potentiel — Goma — Villa ».
+ */
+function notify_staff_new_prospect(int $prospectId, string $type, string $name, string $city = '', string $detail = ''): void
 {
     $title = $type === 'proprietaire' ? 'Nouveau propriétaire potentiel' : 'Nouveau locataire potentiel';
+    $title = trim($title . ($city !== '' ? ' — ' . $city : '') . ($detail !== '' ? ' — ' . $detail : ''));
     foreach (qtry_all("SELECT id FROM users WHERE role IN ('admin','manager','supervisor') AND status = 'actif'") as $staff) {
         try {
             notify((int) $staff['id'], $title, $name . ' a envoyé un formulaire depuis le site public.', 'app/prospects/' . $prospectId, 'info');
         } catch (Throwable $e) {
             // Une notification ne doit jamais bloquer la soumission publique.
+        }
+    }
+    // Le responsable du dossier est prévenu directement.
+    $agentId = (int) qtry_val('SELECT agent_id FROM prospects WHERE id = ?', [$prospectId], 0);
+    if ($agentId > 0) {
+        $userId = (int) qtry_val('SELECT user_id FROM immo_agents WHERE id = ?', [$agentId], 0);
+        if ($userId > 0) {
+            try {
+                notify($userId, $title, 'Nouveau dossier à traiter : ' . $name . '.', 'app/prospects/' . $prospectId, 'info');
+            } catch (Throwable $e) {
+                // idem
+            }
         }
     }
 }
@@ -800,15 +1058,66 @@ function handle_upload(string $field, string $subdir): ?string
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf',
     ][$mime] ?? 'bin';
     $name = date('YmdHis') . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $dir = rtrim(config('upload.dir'), '/') . '/' . trim($subdir, '/');
-    if (!is_dir($dir)) {
-        mkdir($dir, 0775, true);
+    $subdir = trim($subdir, '/');
+    $root = upload_root();
+    $dir = $subdir === '' ? $root : $root . '/' . $subdir;
+    ensure_upload_dir_guard();
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+        throw new RuntimeException('Dossier de téléversement inaccessible : ' . $dir);
+    }
+    if (!is_writable($dir)) {
+        throw new RuntimeException('Dossier de téléversement non inscriptible : ' . $dir
+            . ' — passez-le en 755/775 depuis le gestionnaire de fichiers cPanel.');
     }
     $dest = $dir . '/' . $name;
-    if (!move_uploaded_file($f['tmp_name'], $dest)) {
-        throw new RuntimeException('Impossible d’enregistrer le fichier.');
+    $moved = move_uploaded_file($f['tmp_name'], $dest);
+    if (!$moved && !is_uploaded_file($f['tmp_name']) && is_readable($f['tmp_name'])) {
+        // Cas non HTTP (script de maintenance, test) : le fichier source est déjà sur le disque.
+        $moved = @copy($f['tmp_name'], $dest);
     }
-    return trim($subdir, '/') . '/' . $name;
+    if (!$moved) {
+        throw new RuntimeException('Impossible d’enregistrer le fichier dans ' . $dir);
+    }
+    @chmod($dest, 0644);
+    if (!is_readable($dest)) {
+        @unlink($dest);
+        throw new RuntimeException('Fichier enregistré mais illisible : ' . $dest);
+    }
+    return $subdir === '' ? $name : $subdir . '/' . $name;
+}
+
+/**
+ * Garantit la présence du fichier de protection du dossier de téléversement.
+ * Sans lui, le dossier disparaît des paquets ZIP et un PHP déposé par erreur
+ * pourrait être exécuté.
+ */
+function ensure_upload_dir_guard(): void
+{
+    $root = upload_root();
+    if (!is_dir($root) && !@mkdir($root, 0775, true) && !is_dir($root)) {
+        return;
+    }
+    $htaccess = $root . '/.htaccess';
+    if (is_file($htaccess)) {
+        return;
+    }
+    $rules = "# YOUPENDI IMMO SELECT — dossier des téléversements\n"
+        . "Options -Indexes\n"
+        . "<IfModule mod_authz_core.c>\n"
+        . "  <FilesMatch \"\\.(php|phtml|php[0-9]|phar|cgi|pl|py|sh)$\">\n"
+        . "    Require all denied\n"
+        . "  </FilesMatch>\n"
+        . "</IfModule>\n"
+        . "<IfModule !mod_authz_core.c>\n"
+        . "  <FilesMatch \"\\.(php|phtml|php[0-9]|phar|cgi|pl|py|sh)$\">\n"
+        . "    Order allow,deny\n"
+        . "    Deny from all\n"
+        . "  </FilesMatch>\n"
+        . "</IfModule>\n";
+    @file_put_contents($htaccess, $rules);
+    if (!is_file($root . '/index.html')) {
+        @file_put_contents($root . '/index.html', '');
+    }
 }
 
 function handle_uploads(string $field, string $subdir): array
@@ -922,30 +1231,65 @@ function published_status_sql(string $alias = 'p'): string
     return "$alias.status IN ('publie','disponible','visite_en_cours')";
 }
 
+/**
+ * URL publique d'une photo.
+ *
+ * Règle importante : on ne renvoie jamais l'URL d'un fichier absent du serveur,
+ * sinon le navigateur affiche une icône « image cassée ». À la place on renvoie
+ * une image de substitution présente dans le paquet.
+ */
 function photo_url(?string $path): string
 {
-    if (!$path) {
-        return asset('img/p1.jpg');
+    $path = str_replace('\\', '/', trim((string) $path));
+    if ($path === '') {
+        return photo_placeholder();
     }
-    if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+    if (preg_match('#^(https?:)?//#i', $path)) {
         return $path;
     }
-    if (str_starts_with($path, '../assets/')) {
-        return asset(ltrim(str_replace('../assets/', '', $path), '/'));
+
+    // Ressources fournies avec le paquet (données de démonstration, anciennes lignes).
+    $rel = null;
+    foreach (['../assets/', '/assets/', 'assets/'] as $prefix) {
+        if (str_starts_with($path, $prefix)) {
+            $rel = ltrim(substr($path, strlen($prefix)), '/');
+            break;
+        }
     }
-    if (str_starts_with($path, 'assets/')) {
-        return asset(substr($path, 7));
+    if ($rel !== null) {
+        return asset_exists($rel) ? asset($rel) : photo_placeholder();
     }
-    return upload_url($path);
+
+    // Fichier téléversé : renvoyé seulement s'il existe réellement sur le disque.
+    $upload = upload_relative($path);
+    if ($upload !== null) {
+        return upload_url($upload);
+    }
+
+    return photo_placeholder();
 }
 
 function agent_photo_url(?string $path): string
 {
     $path = trim((string) $path);
     if ($path === '') {
-        return asset('img/agent-placeholder.svg');
+        return agent_placeholder();
     }
-    return photo_url($path);
+    if (preg_match('#^(https?:)?//#i', $path)) {
+        return $path;
+    }
+    $rel = null;
+    foreach (['../assets/', '/assets/', 'assets/'] as $prefix) {
+        if (str_starts_with(str_replace('\\', '/', $path), $prefix)) {
+            $rel = ltrim(substr(str_replace('\\', '/', $path), strlen($prefix)), '/');
+            break;
+        }
+    }
+    if ($rel !== null) {
+        return asset_exists($rel) ? asset($rel) : agent_placeholder();
+    }
+    $upload = upload_relative($path);
+    return $upload !== null ? upload_url($upload) : agent_placeholder();
 }
 
 function cover_of(int $propertyId): string
@@ -955,6 +1299,51 @@ function cover_of(int $propertyId): string
         $p = qtry_one('SELECT path FROM propriete_images WHERE propriete_id = ? OR property_id = ? LIMIT 1', [$propertyId, $propertyId]);
     }
     return photo_url($p['path'] ?? $p['image'] ?? $p['chemin'] ?? null);
+}
+
+/** Vrai si la photo stockée en base est bien présente sur le serveur. */
+function photo_exists(?string $path): bool
+{
+    $path = trim((string) $path);
+    if ($path === '') {
+        return false;
+    }
+    if (preg_match('#^(https?:)?//#i', $path)) {
+        return true;
+    }
+    $normalized = str_replace('\\', '/', $path);
+    foreach (['../assets/', '/assets/', 'assets/'] as $prefix) {
+        if (str_starts_with($normalized, $prefix)) {
+            return asset_exists(ltrim(substr($normalized, strlen($prefix)), '/'));
+        }
+    }
+    return upload_relative($path) !== null;
+}
+
+/**
+ * Photos référencées en base mais absentes du serveur.
+ * Utilisé par le diagnostic et l'administration pour repérer les vitrines cassées.
+ *
+ * @return array{total:int, missing:int, examples:string[]}
+ */
+function photo_audit(int $examples = 5): array
+{
+    $rows = qtry_all('SELECT path FROM property_photos');
+    if (!$rows) {
+        $rows = qtry_all('SELECT image AS path FROM propriete_images');
+    }
+    $missing = [];
+    foreach ($rows as $row) {
+        $path = (string) ($row['path'] ?? '');
+        if ($path !== '' && !photo_exists($path)) {
+            $missing[] = $path;
+        }
+    }
+    return [
+        'total' => count($rows),
+        'missing' => count($missing),
+        'examples' => array_slice($missing, 0, $examples),
+    ];
 }
 
 function whatsapp_link(string $text = ''): string

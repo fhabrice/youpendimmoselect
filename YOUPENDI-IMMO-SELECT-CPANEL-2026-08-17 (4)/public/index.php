@@ -2,7 +2,9 @@
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 require dirname(__DIR__) . '/app/http.php';
+require dirname(__DIR__) . '/app/crm.php';
 require dirname(__DIR__) . '/app/http_app.php';
+require dirname(__DIR__) . '/app/http_crm.php';
 require dirname(__DIR__) . '/app/http_more.php';
 require dirname(__DIR__) . '/app/http_reports.php';
 
@@ -32,6 +34,17 @@ function dispatch(string $path, string $method): void
 {
     if ($path === '/health') {
         json_out(['ok' => true, 'app' => 'YOUPENDI IMMO SELECT']);
+    }
+
+    // Ressources statiques (images de la vitrine, CSS, JS, documents).
+    // L'hébergeur les sert normalement en direct ; ce filet de sécurité
+    // garantit qu'elles restent accessibles même si la règle de réécriture
+    // du .htaccess manque ou pointe vers un mauvais dossier.
+    if ($method === 'GET' && preg_match('#^/uploads/(.+)$#', $path, $m)) {
+        serve_public_file(upload_root(), $m[1], true);
+    }
+    if ($method === 'GET' && preg_match('#^/assets/(.+)$#', $path, $m)) {
+        serve_public_file(asset_dir(), $m[1], false);
     }
 
     $routes = [
@@ -64,6 +77,7 @@ function dispatch(string $path, string $method): void
         'GET /app/biens' => 'app_properties',
         'GET /app/biens/nouveau' => fn() => app_property_form(null),
         'POST /app/biens/nouveau' => fn() => app_property_form(null),
+        'GET /app/crm' => 'app_crm_dashboard',
         'GET /app/prospects' => 'app_prospects',
         'GET /app/prospects/nouveau' => fn() => app_prospect_form(null),
         'POST /app/prospects/nouveau' => fn() => app_prospect_form(null),
@@ -177,6 +191,30 @@ function dispatch(string $path, string $method): void
     }
     if (preg_match('#^/app/prospects/(\d+)/statut$#', $path, $m) && $method === 'POST') {
         app_prospect_status_update((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/prospects/(\d+)/affecter$#', $path, $m) && $method === 'POST') {
+        app_prospect_assign((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/prospects/(\d+)/interaction$#', $path, $m) && $method === 'POST') {
+        app_prospect_interaction((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/prospects/(\d+)/proposer$#', $path, $m) && $method === 'POST') {
+        app_prospect_propose((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/prospects/(\d+)/matching$#', $path, $m) && $method === 'GET') {
+        app_prospect_matching((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/biens/(\d+)/matching$#', $path, $m) && $method === 'GET') {
+        app_property_matching((int) $m[1]);
+        return;
+    }
+    if (preg_match('#^/app/propositions/(\d+)/reponse$#', $path, $m) && $method === 'POST') {
+        app_proposal_update((int) $m[1]);
         return;
     }
     if (preg_match('#^/app/prospects/(\d+)/convertir-proprietaire$#', $path, $m) && $method === 'POST') {

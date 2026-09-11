@@ -3,10 +3,12 @@
     <p class="kicker gold">Immo Stay · <?= e($p['reference']) ?></p>
     <h1 class="page-title"><?= e($stay['name'] ?: $p['title']) ?></h1>
     <div class="gallery" style="margin:18px 0">
-      <img class="gallery-main" src="<?= e(photo_url($photos[0]['path'] ?? null)) ?>" alt="" style="min-height:340px;object-fit:cover">
+      <img class="gallery-main" src="<?= e(photo_url($photos[0]['path'] ?? null)) ?>" alt="<?= e($stay['name'] ?: $p['title']) ?>" style="min-height:340px;object-fit:cover"
+           onerror="this.onerror=null;this.src='<?= e(photo_placeholder()) ?>'">
       <div class="stack">
         <?php foreach (array_slice($photos,1,3) as $ph): ?>
-          <img src="<?= e(photo_url($ph['path'])) ?>" alt="" style="height:110px;object-fit:cover">
+          <img src="<?= e(photo_url($ph['path'])) ?>" alt="" style="height:110px;object-fit:cover"
+               onerror="this.onerror=null;this.src='<?= e(photo_placeholder()) ?>'">
         <?php endforeach; ?>
       </div>
     </div>

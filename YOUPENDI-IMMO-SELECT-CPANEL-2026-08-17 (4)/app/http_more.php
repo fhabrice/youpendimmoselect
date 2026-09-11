@@ -670,8 +670,12 @@ function app_documents(): void
     $items = db()->all('SELECT * FROM documents ORDER BY id DESC');
     $rows = [];
     foreach ($items as $d) {
-        $url = str_starts_with((string) $d['path'], '../') ? photo_url($d['path']) : upload_url($d['path']);
-        $rows[] = [e($d['title']), e($d['entity'] . ' #' . $d['entity_id']), e(dfr($d['created_at'])), '<a href="' . e($url) . '" target="_blank">Ouvrir</a>'];
+        $docPath = (string) $d['path'];
+        $url = str_starts_with($docPath, '../') ? photo_url($docPath) : upload_url($docPath);
+        $link = photo_exists($docPath)
+            ? '<a href="' . e($url) . '" target="_blank">Ouvrir</a>'
+            : '<span class="muted">Fichier introuvable</span>';
+        $rows[] = [e($d['title']), e($d['entity'] . ' #' . $d['entity_id']), e(dfr($d['created_at'])), $link];
     }
     ob_start();
     echo fld('title', 'Titre', 'text', '', 'req');

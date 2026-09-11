@@ -218,6 +218,18 @@ function migrate(Database $db): void
         created_at DATETIME
     )$engine";
 
+    // Cahier des charges §21 — biens proposés à un prospect et réponse du client.
+    $stmts[] = "CREATE TABLE IF NOT EXISTS prospect_proposals (
+        id $id,
+        prospect_id INTEGER NOT NULL,
+        property_id INTEGER NOT NULL,
+        agent_id INTEGER,
+        status VARCHAR(20) DEFAULT 'envoye',
+        note TEXT,
+        created_at DATETIME,
+        responded_at DATETIME
+    )$engine";
+
     $stmts[] = "CREATE TABLE IF NOT EXISTS properties (
         id $id,
         reference VARCHAR(40) UNIQUE,
@@ -683,6 +695,46 @@ function migrate(Database $db): void
         $db->update('tenants', ['reference' => 'LOC-' . str_pad((string) $row['id'], 4, '0', STR_PAD_LEFT)], 'id = ?', [$row['id']]);
     }
 
+    // ---- Cahier des charges CRM : colonnes additives (§9, §11) ----
+    ensure_column($db, 'prospects', 'reference', 'VARCHAR(20)');
+    ensure_column($db, 'prospect_notes', 'kind', "VARCHAR(20) DEFAULT 'note'");
+
+    // §11 — identifiant PROP-00001 / LOC-00001 pour les dossiers déjà présents.
+    foreach ($db->all("SELECT id, type FROM prospects WHERE reference IS NULL OR reference = ''") as $row) {
+        $prefix = ($row['type'] ?? 'locataire') === 'proprietaire' ? 'PROP' : 'LOC';
+        $db->update('prospects', ['reference' => $prefix . '-' . str_pad((string) $row['id'], 5, '0', STR_PAD_LEFT)], 'id = ?', [$row['id']]);
+    }
+
+    // §6 — unification des statuts historiques, tracée dans l'historique.
+    foreach ([
+        'rendez_vous_fixe' => 'rdv_prevu',
+        'bien_a_visiter' => 'en_traitement',
+        'proposition_envoyee' => 'negociation',
+        'recherche_en_cours' => 'en_traitement',
+        'biens_proposes' => 'negociation',
+        'visite_programmee' => 'visite_prevue',
+        'visite_effectuee' => 'negociation',
+        'non_abouti' => 'perdu',
+    ] as $oldStatus => $newStatus) {
+        foreach ($db->all('SELECT id, created_at FROM prospects WHERE status = ?', [$oldStatus]) as $row) {
+            $db->insert('prospect_status_history', [
+                'prospect_id' => $row['id'], 'old_status' => $oldStatus, 'new_status' => $newStatus,
+                'user_id' => null, 'note' => 'Statut unifié lors de la mise à niveau CRM.',
+                'created_at' => $row['created_at'] ?: now(),
+            ]);
+        }
+        $db->exec('UPDATE prospects SET status = ? WHERE status = ?', [$newStatus, $oldStatus]);
+    }
+
+    // §18 — normalisation des sources historiques.
+    foreach ([
+        'site_je_suis_proprietaire' => 'site_confier_mon_bien',
+        'site_je_cherche_logement' => 'site_confier_ma_recherche',
+        'agent' => 'bureau',
+    ] as $oldSource => $newSource) {
+        $db->exec('UPDATE prospects SET source = ? WHERE source = ?', [$newSource, $oldSource]);
+    }
+
     $indexes = [
         'CREATE INDEX IF NOT EXISTS idx_prop_status ON properties(status)',
         'CREATE INDEX IF NOT EXISTS idx_prop_city ON properties(city)',
@@ -691,6 +743,9 @@ function migrate(Database $db): void
         'CREATE INDEX IF NOT EXISTS idx_prospect_agent ON prospects(agent_id)',
         'CREATE INDEX IF NOT EXISTS idx_prospect_type_status ON prospects(type, status)',
         'CREATE INDEX IF NOT EXISTS idx_prospect_history ON prospect_status_history(prospect_id, created_at)',
+        'CREATE INDEX IF NOT EXISTS idx_prospect_ref ON prospects(reference)',
+        'CREATE INDEX IF NOT EXISTS idx_proposal_prospect ON prospect_proposals(prospect_id)',
+        'CREATE INDEX IF NOT EXISTS idx_proposal_property ON prospect_proposals(property_id)',
         'CREATE INDEX IF NOT EXISTS idx_contract_property_status ON contracts(property_id, status)',
         'CREATE INDEX IF NOT EXISTS idx_contract_tenant_status ON contracts(tenant_id, status)',
         'CREATE INDEX IF NOT EXISTS idx_rent_status ON rents(status)',

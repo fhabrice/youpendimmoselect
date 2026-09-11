@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Photo indisponible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef2f7"/>
+      <stop offset="1" stop-color="#dbe3ec"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g)"/>
+  <g fill="none" stroke="#9aa8b8" stroke-width="14" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M430 330 L600 200 L770 330"/>
+    <path d="M470 320 V520 H730 V320"/>
+    <path d="M560 520 V420 H640 V520"/>
+  </g>
+  <g fill="#9aa8b8">
+    <circle cx="700" cy="360" r="18"/>
+  </g>
+  <text x="600" y="620" text-anchor="middle" font-family="Inter, Arial, Helvetica, sans-serif" font-size="44" font-weight="600" fill="#7c8b9c">Photo indisponible</text>
+  <text x="600" y="672" text-anchor="middle" font-family="Inter, Arial, Helvetica, sans-serif" font-size="30" fill="#9aa8b8">YOUPENDI IMMO SELECT</text>
+</svg>
