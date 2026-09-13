@@ -1,10 +1,40 @@
 YOUPENDI IMMO SELECT
 Version cPanel : 2026-08-17 (26 provinces RDC et Tailwind local)
-Révision : 2026-09-09 — correction de l'affichage des images de la vitrine
-Commit source : 43a8f46babe8d50b42aa291a0712d088a24b4f62
-Branche source : arena/01a00daa-youpendimmoselect
+Révision : 2026-09-12 — rapport financier, rapport des impayés et images de la vitrine vérifiées
+Commit source : 637dfb329b572b0c57a987a6548f54a3ab48a893
+Branche source : arena/01a09688-youpendimmoselect
 
-Révision 2026-09-09
+Révision 2026-09-12
+- Administration > Rapports : deux nouveaux documents dans le sélecteur de rapports :
+  · Rapport I — Rapport financier : loyers dus, encaissé, impayé, commission
+    YOUPENDI, dépenses validées, net propriétaire et taux de recouvrement par
+    bien, avec historique mensuel des encaissements. PDF et Excel/CSV.
+  · Rapport J — Impayés et recouvrement : une ligne par échéance de loyer
+    impayée (bien, locataire, téléphone, propriétaire, période, échéance,
+    montant dû, payé, reste, retard en jours) avec répartition par ancienneté
+    (≤ 30 j, 31–60 j, 61–90 j, > 90 j). PDF et Excel/CSV.
+- La période (du/au) des rapports financiers filtre les flux (loyers,
+  commissions, dépenses) ; les autres filtres (province, ville, commune,
+  quartier, propriétaire, agent, catégorie, type, statut) filtrent les biens.
+- La vue d'ensemble des rapports ajoute la priorité « échéances impayées à
+  recouvrer ». Menu Finance : « Rapport financier » et « Rapport des impayés ».
+  L'espace propriétaire y accède aussi, limité à ses propres biens.
+- Statuts de loyers rafraîchis avant chaque rapport : une échéance dépassée
+  et non réglée passe automatiquement en retard.
+- Vitrine — images vérifiées de bout en bout (accueil, location mensuelle,
+  ventes, Immo Stay, services, fiches bien et fiches séjour) : logo, héro,
+  photos des biens, photos des agents et fichiers téléversés répondent tous ;
+  un fichier absent affiche l'image de substitution au lieu d'une image cassée.
+- Correction : la colonne « offre » (vente / location mensuelle / location
+  journalière) n'était ajoutée qu'aux bases MySQL. Elle est désormais garantie
+  sur tous les pilotes — sans elle, les requêtes de la vitrine échouent et
+  aucune propriété (donc aucune photo) ne s'affiche.
+- Le logo (en-tête, pied de page, pages de connexion) et l'image héro de
+  l'accueil utilisent une chaîne de repli vers un fichier réellement présent.
+- La base de démonstration inclut des biens à vendre et des séjours journaliers
+  avec leurs photos : la vitrine de démonstration est complète.
+
+Révision 2026-09-09 (conservée)
 - photo_url() / agent_photo_url() ne renvoient plus l'URL d'un fichier absent :
   image de substitution assets/img/photo-missing.svg à la place d'une image cassée.
 - /uploads/... et /assets/... servis par le contrôleur frontal (filet de sécurité

@@ -9,6 +9,8 @@ $labels = [
   'tenants' => 'Locataires',
   'contracts' => 'Contrats',
   'movements' => 'Mouvements',
+  'finance' => 'Rapport financier',
+  'impayes' => 'Impayés et recouvrement',
 ];
 $reportCodes = [
   'dashboard' => 'DASH',
@@ -20,6 +22,8 @@ $reportCodes = [
   'tenants' => 'F',
   'contracts' => 'G',
   'movements' => 'H',
+  'finance' => 'I',
+  'impayes' => 'J',
 ];
 $reportDescriptions = [
   'dashboard' => 'Indicateurs clés et priorités du portefeuille',
@@ -31,6 +35,8 @@ $reportDescriptions = [
   'tenants' => 'Locataires et périodes de leurs contrats',
   'contracts' => 'État des contrats et alertes d’échéance',
   'movements' => 'Entrées, sorties et changements du portefeuille',
+  'finance' => 'Loyers dus, encaissements, impayés, commissions, dépenses et net propriétaire',
+  'impayes' => 'Échéances impayées, ancienneté du retard et montants à recouvrer',
 ];
 $reportTitle = $labels[$report] ?? 'Rapports du portefeuille';
 $reportCode = $reportCodes[$report] ?? 'R';
@@ -157,16 +163,40 @@ $activeRows = $rows[$report] ?? [];
       <div><p class="kicker">Synthèse</p><strong>Totaux du périmètre sélectionné</strong></div>
       <span class="muted"><?= (int) $summary['rows'] ?> ligne(s) dans ce rapport</span>
     </div>
-    <div class="report-summary-grid">
-      <div><span>Biens</span><strong><?= (int) $summary['properties'] ?></strong></div>
-      <div><span>Contrats actifs</span><strong><?= (int) $summary['contracts'] ?></strong></div>
-      <div><span>Occupés</span><strong><?= (int) $summary['occupied'] ?></strong></div>
-      <div><span>Vacants</span><strong><?= (int) $summary['vacant'] ?></strong></div>
-      <div><span>Disponibles</span><strong><?= (int) $summary['available'] ?></strong></div>
-      <div><span>Commissions</span><strong><?= e(money($summary['commission_total'])) ?></strong></div>
-      <div><span>Commissions validées</span><strong><?= e(money($summary['commission_validated'])) ?></strong></div>
-      <div><span>Dépenses</span><strong><?= e(money($summary['expenses'])) ?></strong></div>
-    </div>
+    <?php if ($report === 'finance'): ?>
+      <div class="report-summary-grid">
+        <div><span>Loyers dus</span><strong><?= e(money($summary['finance_billed'])) ?></strong></div>
+        <div><span>Encaissé</span><strong><?= e(money($summary['finance_collected'])) ?></strong></div>
+        <div><span>Impayé</span><strong><?= e(money($summary['finance_outstanding'])) ?></strong></div>
+        <div><span>Taux de recouvrement</span><strong><?= e($summary['finance_recovery']) ?></strong></div>
+        <div><span>Commission YOUPENDI</span><strong><?= e(money($summary['finance_commissions'])) ?></strong></div>
+        <div><span>Dépenses validées</span><strong><?= e(money($summary['finance_expenses'])) ?></strong></div>
+        <div><span>Net propriétaire</span><strong><?= e(money($summary['finance_net'])) ?></strong></div>
+        <div><span>Biens</span><strong><?= (int) $summary['properties'] ?></strong></div>
+      </div>
+    <?php elseif ($report === 'impayes'): ?>
+      <div class="report-summary-grid">
+        <div><span>Échéances impayées</span><strong><?= (int) $summary['arrears_count'] ?></strong></div>
+        <div><span>Montant impayé</span><strong><?= e(money($summary['arrears_total'])) ?></strong></div>
+        <div><span>Locataires concernés</span><strong><?= (int) $summary['arrears_tenants'] ?></strong></div>
+        <div><span>Retard maximal</span><strong><?= (int) $summary['arrears_oldest_days'] ?> j</strong></div>
+        <div><span>Retard ≤ 30 j</span><strong><?= (int) $summary['arrears_30'] ?></strong></div>
+        <div><span>Retard 31–60 j</span><strong><?= (int) $summary['arrears_60'] ?></strong></div>
+        <div><span>Retard 61–90 j</span><strong><?= (int) $summary['arrears_90'] ?></strong></div>
+        <div><span>Retard &gt; 90 j</span><strong><?= (int) $summary['arrears_90p'] ?></strong></div>
+      </div>
+    <?php else: ?>
+      <div class="report-summary-grid">
+        <div><span>Biens</span><strong><?= (int) $summary['properties'] ?></strong></div>
+        <div><span>Contrats actifs</span><strong><?= (int) $summary['contracts'] ?></strong></div>
+        <div><span>Occupés</span><strong><?= (int) $summary['occupied'] ?></strong></div>
+        <div><span>Vacants</span><strong><?= (int) $summary['vacant'] ?></strong></div>
+        <div><span>Disponibles</span><strong><?= (int) $summary['available'] ?></strong></div>
+        <div><span>Commissions</span><strong><?= e(money($summary['commission_total'])) ?></strong></div>
+        <div><span>Commissions validées</span><strong><?= e(money($summary['commission_validated'])) ?></strong></div>
+        <div><span>Dépenses</span><strong><?= e(money($summary['expenses'])) ?></strong></div>
+      </div>
+    <?php endif; ?>
   </section>
 
   <?php if ($report === 'dashboard'): ?>
@@ -192,6 +222,7 @@ $activeRows = $rows[$report] ?? [];
       <section class="panel report-panel">
         <div class="section-head"><div><p class="kicker">À traiter</p><h2>Priorités opérationnelles</h2></div><a href="<?= e($link('vacant')) ?>">Biens vacants</a></div>
         <div class="priority-list">
+          <a href="<?= e($link('impayes')) ?>"><strong><?= (int)$summary['arrears_count'] ?></strong><span>échéances impayées (<?= e(money($summary['arrears_total'])) ?>) à recouvrer</span><b>→</b></a>
           <a href="<?= e($link('vacant')) ?>"><strong><?= (int)$kpis[3]['value'] ?></strong><span>biens vacants à commercialiser</span><b>→</b></a>
           <a href="<?= e($link('contracts')) ?>"><strong><?= (int)$kpis[10]['value'] ?></strong><span>contrats à renouveler sous 90 jours</span><b>→</b></a>
           <a href="<?= e($link('movements')) ?>"><strong><?= count($rows['movements']) ?></strong><span>mouvements enregistrés</span><b>→</b></a>
@@ -246,6 +277,106 @@ $activeRows = $rows[$report] ?? [];
           <article class="report-kpi tone-3"><span>Échéance 90 j</span><strong><?= $contractSummary['90'] ?></strong><small>À planifier</small></article>
         </div>
         <div class="table-scroll"><table class="report-table"><thead><tr><th>Référence</th><th>Bien</th><th>Locataire</th><th>Propriétaire</th><th>Agent</th><th>Période</th><th>Statut</th><th>Alerte échéance</th></tr></thead><tbody><?php foreach ($activeRows as $r): ?><tr><td><strong><?= e($r['reference']) ?></strong></td><td><?= e($r['property']) ?></td><td><?= e($r['tenant']) ?></td><td><?= e($r['owner']) ?></td><td><?= e($r['agent']) ?></td><td><?= e($r['period']) ?></td><td><?= status_badge($r['status']) ?></td><td><?= $r['alert'] !== '—' ? '<span class="badge badge-warn">'.e($r['alert']).'</span>' : '<span class="muted">—</span>' ?></td></tr><?php endforeach; ?></tbody></table></div>
+      </section>
+    <?php elseif ($report === 'finance'): ?>
+      <div class="report-kpis compact">
+        <article class="report-kpi tone-1"><span>Loyers dus</span><strong><?= e(money($summary['finance_billed'])) ?></strong><small>Période sélectionnée</small></article>
+        <article class="report-kpi tone-2"><span>Encaissé</span><strong><?= e(money($summary['finance_collected'])) ?></strong><small>Paiements confirmés</small></article>
+        <article class="report-kpi tone-3"><span>Impayé</span><strong><?= e(money($summary['finance_outstanding'])) ?></strong><small>Reste à percevoir</small></article>
+        <article class="report-kpi tone-0"><span>Taux de recouvrement</span><strong><?= e($summary['finance_recovery']) ?></strong><small>Encaissé / dû</small></article>
+        <article class="report-kpi tone-1"><span>Commission YOUPENDI</span><strong><?= e(money($summary['finance_commissions'])) ?></strong><small>Gestion locative</small></article>
+        <article class="report-kpi tone-2"><span>Dépenses validées</span><strong><?= e(money($summary['finance_expenses'])) ?></strong><small>Charges des biens</small></article>
+        <article class="report-kpi tone-3"><span>Net propriétaire</span><strong><?= e(money($summary['finance_net'])) ?></strong><small>Encaissé − commissions − dépenses</small></article>
+      </div>
+      <section class="panel report-panel">
+        <div class="section-head"><div><p class="kicker">Évolution</p><h2>Encaissements mensuels</h2></div><a href="<?= e($link('impayes')) ?>">Voir les impayés</a></div>
+        <?php
+          $finMax = 1.0;
+          foreach ($finHistory as $finMonth) {
+              $finMax = max($finMax, (float) $finMonth['billed'], (float) $finMonth['collected']);
+          }
+        ?>
+        <div class="history-large">
+          <?php foreach ($finHistory as $month): ?>
+            <div>
+              <strong><?= e(money($month['collected'])) ?></strong>
+              <span style="height:<?= min(100, (int) round((float)$month['collected'] * 100 / $finMax)) ?>%" title="Encaissé <?= e(money($month['collected'])) ?> sur <?= e(money($month['billed'])) ?> dus"></span>
+              <small><?= e($month['label']) ?> · dû <?= e(money($month['billed'])) ?></small>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      </section>
+      <section class="panel report-panel">
+        <div class="section-head"><div><p class="kicker">Rapport I</p><h2>Résultat financier par bien</h2></div><span class="muted"><?= count($activeRows) ?> bien(s)</span></div>
+        <div class="table-scroll">
+          <table class="report-table">
+            <thead><tr><th>Référence</th><th>Bien</th><th>Localisation</th><th>Propriétaire</th><th>Agent responsable</th><th>Loyers dus</th><th>Encaissé</th><th>Impayé</th><th>Commission</th><th>Dépenses</th><th>Net propriétaire</th><th>Recouvrement</th></tr></thead>
+            <tbody>
+              <?php foreach ($activeRows as $r): ?>
+                <tr>
+                  <td><strong><?= e($r['reference']) ?></strong></td>
+                  <td><?= e($r['title']) ?></td>
+                  <td><?= e($r['location']) ?></td>
+                  <td><?= e($r['owner']) ?></td>
+                  <td><?= e($r['agent']) ?></td>
+                  <td><?= e(money($r['billed'])) ?></td>
+                  <td><?= e(money($r['collected'])) ?></td>
+                  <td><?= $r['outstanding'] > 0.01 ? '<span class="badge badge-danger">' . e(money($r['outstanding'])) . '</span>' : e(money(0)) ?></td>
+                  <td><?= e(money($r['commission'])) ?></td>
+                  <td><?= e(money($r['expenses'])) ?></td>
+                  <td><strong><?= e(money($r['net'])) ?></strong></td>
+                  <td><?= e($r['recovery']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+              <?php if (!$activeRows): ?><tr><td colspan="12" class="muted">Aucun bien dans le périmètre sélectionné.</td></tr><?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    <?php elseif ($report === 'impayes'): ?>
+      <div class="report-kpis compact">
+        <article class="report-kpi tone-3"><span>Échéances impayées</span><strong><?= (int)$summary['arrears_count'] ?></strong><small>Loyers arrivés à échéance et non réglés</small></article>
+        <article class="report-kpi tone-3"><span>Montant impayé</span><strong><?= e(money($summary['arrears_total'])) ?></strong><small>Reste à recouvrer</small></article>
+        <article class="report-kpi tone-2"><span>Locataires concernés</span><strong><?= (int)$summary['arrears_tenants'] ?></strong><small>À contacter en priorité</small></article>
+        <article class="report-kpi tone-1"><span>Retard maximal</span><strong><?= (int)$summary['arrears_oldest_days'] ?> j</strong><small>Plus ancienne échéance impayée</small></article>
+      </div>
+      <section class="panel report-panel">
+        <div class="section-head"><div><p class="kicker">Ancienneté</p><h2>Répartition du retard de paiement</h2></div><a href="<?= e(base_url('app/loyers?status=en_retard')) ?>">Liste des loyers en retard</a></div>
+        <?php $arrMax = max(1, (int) $summary['arrears_count']); ?>
+        <div class="occupancy-bars">
+          <div><span><b>Retard ≤ 30 jours</b><em><?= (int)$summary['arrears_30'] ?></em></span><i><b style="width:<?= min(100, (int)$summary['arrears_30'] * 100 / $arrMax) ?>%"></b></i></div>
+          <div><span><b>Retard 31–60 jours</b><em><?= (int)$summary['arrears_60'] ?></em></span><i><b style="width:<?= min(100, (int)$summary['arrears_60'] * 100 / $arrMax) ?>%"></b></i></div>
+          <div><span><b>Retard 61–90 jours</b><em><?= (int)$summary['arrears_90'] ?></em></span><i><b style="width:<?= min(100, (int)$summary['arrears_90'] * 100 / $arrMax) ?>%"></b></i></div>
+          <div><span><b>Retard &gt; 90 jours</b><em><?= (int)$summary['arrears_90p'] ?></em></span><i><b style="width:<?= min(100, (int)$summary['arrears_90p'] * 100 / $arrMax) ?>%"></b></i></div>
+        </div>
+      </section>
+      <section class="panel report-panel">
+        <div class="section-head"><div><p class="kicker">Rapport J</p><h2>Détail des échéances impayées</h2></div><span class="muted"><?= count($activeRows) ?> échéance(s)</span></div>
+        <div class="table-scroll">
+          <table class="report-table">
+            <thead><tr><th>Référence</th><th>Bien</th><th>Locataire</th><th>Téléphone</th><th>Propriétaire</th><th>Période</th><th>Échéance</th><th>Montant dû</th><th>Payé</th><th>Reste à payer</th><th>Retard</th><th>Ancienneté</th><th>Statut</th></tr></thead>
+            <tbody>
+              <?php foreach ($activeRows as $r): ?>
+                <tr>
+                  <td><strong><?= e($r['reference']) ?></strong></td>
+                  <td><?= e($r['property']) ?></td>
+                  <td><?= e($r['tenant']) ?></td>
+                  <td><?= e($r['tenant_phone']) ?></td>
+                  <td><?= e($r['owner']) ?></td>
+                  <td><?= e(dfr($r['period'], 'm/Y')) ?></td>
+                  <td><?= e(dfr($r['due_date'])) ?></td>
+                  <td><?= e(money($r['amount'])) ?></td>
+                  <td><?= e(money($r['paid'])) ?></td>
+                  <td><strong><?= e(money($r['remaining'])) ?></strong></td>
+                  <td><?= (int)$r['days_late'] ?> j</td>
+                  <td><span class="badge <?= $r['bucket_key'] === '90p' ? 'badge-danger' : 'badge-warn' ?>"><?= e($r['bucket']) ?></span></td>
+                  <td><?= status_badge($r['status']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+              <?php if (!$activeRows): ?><tr><td colspan="13" class="muted">Aucun impayé dans le périmètre sélectionné : toutes les échéances dues sont réglées.</td></tr><?php endif; ?>
+            </tbody>
+          </table>
+        </div>
       </section>
     <?php else: ?>
       <section class="panel report-panel"><div class="section-head"><div><p class="kicker">Rapport H</p><h2>Mouvements du portefeuille</h2></div></div>

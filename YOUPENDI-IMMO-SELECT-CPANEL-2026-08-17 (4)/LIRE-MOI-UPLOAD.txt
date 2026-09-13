@@ -18,7 +18,7 @@ INSTALLATION / MISE À JOUR
 5. Ne supprimez jamais avant la mise à jour :
      youpendimmoselect/public/uploads/        ← les photos de la vitrine
      youpendimmoselect/storage/config.local.php
-   Le paquet contient maintenant public/uploads/.htaccess et public/uploads/index.html :
+   Le paquet contient public/uploads/.htaccess et public/uploads/index.html :
    le dossier survit donc à l'extraction au lieu d'être écrasé par un dossier vide.
 6. Vérifiez que storage et public/uploads sont accessibles en écriture (755 ou 775).
 7. Ouvrez https://www.youpendimmoselect.com/diagnostic.php.
@@ -26,8 +26,55 @@ INSTALLATION / MISE À JOUR
    mais absentes du serveur.
 8. Ouvrez ensuite le site et connectez-vous à l'administration.
 
-CORRECTIONS DE CETTE VERSION — IMAGES DE LA VITRINE
----------------------------------------------------
+NOUVEAUTÉS DE CETTE VERSION (RÉVISION 2026-09-12)
+-------------------------------------------------
+RAPPORT FINANCIER ET RAPPORT DES IMPAYÉS
+1. Administration > Rapports : le sélecteur « Type de rapport » contient deux
+   nouveaux documents :
+     Rapport I — Rapport financier :
+       loyers dus, encaissé, impayé, commission YOUPENDI, dépenses validées,
+       net propriétaire et taux de recouvrement, agrégés par bien, avec
+       l'historique mensuel des encaissements.
+     Rapport J — Impayés et recouvrement :
+       une ligne par échéance de loyer impayée : bien, locataire et son
+       téléphone, propriétaire, agent, période, échéance, montant dû, payé,
+       reste à payer, retard en jours et ancienneté (≤ 30 j, 31–60 j,
+       61–90 j, > 90 j), avec la répartition du retard en barres.
+2. Les deux rapports se visualisent à l'écran, se téléchargent en PDF
+   (boutons « Visualiser le PDF » / « Télécharger le PDF ») et s'exportent en
+   Excel/CSV, comme les neuf rapports existants.
+3. Les filtres s'appliquent ainsi : la période (du/au) filtre les flux
+   financiers (loyers, commissions, dépenses) ; la province, la ville, la
+   commune, le quartier, le propriétaire, l'agent, la catégorie, le type et le
+   statut filtrent les biens du périmètre.
+4. Le menu Finance propose désormais « Rapport financier » et « Rapport des
+   impayés ». La vue d'ensemble des rapports affiche la priorité
+   « échéances impayées à recouvrer ».
+5. L'espace propriétaire accède aux mêmes rapports, limités à ses propres
+   biens (Rapport du bailleur).
+6. Les statuts de loyers sont rafraîchis avant chaque rapport : toute échéance
+   dépassée et non réglée apparaît en retard, sans action manuelle.
+
+IMAGES DE LA VITRINE — VÉRIFICATION COMPLÈTE
+7. Toutes les pages de la vitrine (accueil, location mensuelle, ventes,
+   Immo Stay, services, fiche bien, fiche séjour, connexion) ont été testées :
+   chaque image affichée (logo, héro, photos des biens, photos des agents,
+   fichiers téléversés) répond correctement ; aucun fichier manquant ne peut
+   produire une image cassée (image de substitution à la place).
+8. Correction importante : la colonne « offre » (vente / location mensuelle /
+   location journalière) n'était ajoutée qu'aux bases MySQL. Elle est
+   désormais garantie sur tous les pilotes. Sans cette colonne, les requêtes
+   de la vitrine échouent silencieusement : aucune propriété — donc aucune
+   photo — ne s'affiche sur le site.
+9. Le logo (en-tête, pied de page, pages de connexion) et l'image héro de
+   l'accueil basculent automatiquement sur un fichier de remplacement présent
+   sur le serveur si l'original manque.
+10. La base de démonstration inclut désormais des biens à vendre et des
+    séjours journaliers avec leurs photos : les trois sections de l'accueil
+    (vente, location mensuelle, location journalière) sont illustrées.
+
+CORRECTIONS CONSERVÉES DE LA RÉVISION 2026-09-09 — IMAGES DE LA VITRINE
+-----------------------------------------------------------------------
 1. Plus aucune image cassée. photo_url() vérifie que le fichier existe vraiment
    sur le disque avant d'écrire son URL. S'il est absent, la carte, la fiche bien
    et la fiche Immo Stay affichent l'image de substitution
@@ -55,7 +102,7 @@ CORRECTIONS DE CETTE VERSION — IMAGES DE LA VITRINE
 
 PHOTOS ACTUELLEMENT MANQUANTES SUR LE SERVEUR
 ---------------------------------------------
-Les photos téléversées avant cette version peuvent avoir disparu du disque
+Les photos téléversées avant la révision 2026-09-09 peuvent avoir disparu du disque
 (mise à jour du paquet ayant remplacé le dossier public/uploads, ou remise à zéro).
 Le diagnostic les liste. Aucune correction de code ne peut les faire réapparaître :
 ouvrez Administration > Biens (ou Agents) et téléversez à nouveau les photos.
@@ -68,7 +115,7 @@ CORRECTIONS CONSERVÉES DES VERSIONS PRÉCÉDENTES
   les agents et les filtres des rapports.
 - Les anciennes lignes reçoivent automatiquement leur province lorsqu'une ville RDC
   connue est déjà enregistrée ; la migration reste additive et non destructive.
-- L'inscription bailleur et la prévisualisation des neuf rapports utilisent des
+- L'inscription bailleur et la prévisualisation des rapports utilisent des
   utilitaires Tailwind compilés localement. Aucun CDN Tailwind ni outil Node
   n'est nécessaire sur cPanel.
 - Les corrections CRM, visites, agents, archivage, rapports et remise à zéro des

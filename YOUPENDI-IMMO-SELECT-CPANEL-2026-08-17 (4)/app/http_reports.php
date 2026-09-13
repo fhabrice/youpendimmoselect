@@ -3,8 +3,10 @@
 /**
  * Portfolio reporting for the administration area.
  *
- * This module deliberately reports on the property portfolio only. It does
- * not attempt to reconcile rent payments, which remain in the finance area.
+ * Rapports disponibles : pilotage du portefeuille (biens, occupation,
+ * propriétaires, agents, locataires, contrats, mouvements) et rapports
+ * financiers (rapport financier « I » et impayés/recouvrement « J »)
+ * construits à partir des loyers, paiements, commissions et dépenses.
  */
 function app_portfolio_reports(): void
 {
@@ -26,6 +28,7 @@ function app_portfolio_reports(): void
         'kpis' => $data['kpis'],
         'rows' => $data['rows'],
         'history' => $data['history'],
+        'finHistory' => $data['finHistory'],
         'options' => $data['options'],
         'summary' => $data['summary'],
         'tailwind' => true,
@@ -55,12 +58,15 @@ function app_portfolio_report_pdf(): void
 function report_dataset(): array
 {
     $report = str_input('report', 'dashboard');
-    $allowedReports = ['dashboard', 'portfolio', 'occupation', 'vacant', 'owners', 'agents', 'tenants', 'contracts', 'movements'];
+    $allowedReports = ['dashboard', 'portfolio', 'occupation', 'vacant', 'owners', 'agents', 'tenants', 'contracts', 'movements', 'finance', 'impayes'];
     if (!in_array($report, $allowedReports, true)) {
         $report = 'dashboard';
     }
 
     $filters = report_filters();
+    // Les rapports financiers s'appuient sur des statuts d'échéances à jour
+    // (un loyer dont la date limite est passée devient « en retard »).
+    report_refresh_rent_statuses();
     $properties = report_properties($filters);
     $contracts = report_contracts($filters);
     $kpis = report_kpis($properties, $contracts, $filters);
@@ -73,6 +79,8 @@ function report_dataset(): array
         'tenants' => report_tenant_rows($contracts),
         'contracts' => report_contract_rows($contracts),
         'movements' => report_movement_rows($properties, $contracts),
+        'finance' => report_finance_rows($filters),
+        'impayes' => report_arrears_rows($filters),
     ];
 
     $history = report_occupancy_history($contracts, $filters);
@@ -97,6 +105,7 @@ function report_dataset(): array
         'kpis' => $kpis,
         'rows' => $rows,
         'history' => $history,
+        'finHistory' => report_finance_history($filters),
         'options' => $options,
         'summary' => report_summary($report, $properties, $contracts, $kpis, $rows),
     ];
@@ -114,6 +123,8 @@ function report_labels(): array
         'tenants' => 'Locataires',
         'contracts' => 'Contrats',
         'movements' => 'Mouvements',
+        'finance' => 'Rapport financier',
+        'impayes' => 'Impayés et recouvrement',
     ];
 }
 
@@ -129,6 +140,8 @@ function report_codes(): array
         'tenants' => 'F',
         'contracts' => 'G',
         'movements' => 'H',
+        'finance' => 'I',
+        'impayes' => 'J',
     ];
 }
 
@@ -144,6 +157,8 @@ function report_descriptions(): array
         'tenants' => 'Locataires et périodes de leurs contrats',
         'contracts' => 'État des contrats et alertes d’échéance',
         'movements' => 'Entrées, sorties et changements du portefeuille',
+        'finance' => 'Loyers dus, encaissements, impayés, commissions, dépenses et net propriétaire',
+        'impayes' => 'Échéances impayées, ancienneté du retard et montants à recouvrer',
     ];
 }
 
@@ -178,6 +193,31 @@ function report_summary(string $report, array $properties, array $contracts, arr
         ? count($properties)
         : count($rows[$report] ?? []);
 
+    // Totaux financiers calculés depuis les lignes du rapport financier et
+    // du rapport des impayés (toujours présentes dans $rows).
+    $financeRows = $rows['finance'] ?? [];
+    $arrearsRows = $rows['impayes'] ?? [];
+    $financeBilled = array_sum(array_map('floatval', array_column($financeRows, 'billed')));
+    $financeCollected = array_sum(array_map('floatval', array_column($financeRows, 'collected')));
+    $financeOutstanding = array_sum(array_map('floatval', array_column($financeRows, 'outstanding')));
+    $financeCommissions = array_sum(array_map('floatval', array_column($financeRows, 'commission')));
+    $financeExpenses = array_sum(array_map('floatval', array_column($financeRows, 'expenses')));
+    $arrearsTotal = array_sum(array_map('floatval', array_column($arrearsRows, 'remaining')));
+    $arrearsOldest = 0;
+    $arrearsBuckets = ['30' => 0, '60' => 0, '90' => 0, '90p' => 0];
+    $arrearsTenants = [];
+    foreach ($arrearsRows as $arrearsRow) {
+        $arrearsOldest = max($arrearsOldest, (int) ($arrearsRow['days_late'] ?? 0));
+        $bucketKey = (string) ($arrearsRow['bucket_key'] ?? '');
+        if (isset($arrearsBuckets[$bucketKey])) {
+            $arrearsBuckets[$bucketKey]++;
+        }
+        $tenantName = (string) ($arrearsRow['tenant'] ?? '');
+        if ($tenantName !== '' && $tenantName !== '—') {
+            $arrearsTenants[$tenantName] = true;
+        }
+    }
+
     return [
         'rows' => $rowCount,
         'properties' => count($properties),
@@ -191,6 +231,25 @@ function report_summary(string $report, array $properties, array $contracts, arr
         'commission_validated' => $commissionValidated,
         'commission_paid' => $commissionPaid,
         'expenses' => $expenseTotal,
+        // Rapport financier (I)
+        'finance_billed' => $financeBilled,
+        'finance_collected' => $financeCollected,
+        'finance_outstanding' => $financeOutstanding,
+        'finance_commissions' => $financeCommissions,
+        'finance_expenses' => $financeExpenses,
+        'finance_net' => $financeCollected - $financeCommissions - $financeExpenses,
+        'finance_recovery' => $financeBilled > 0
+            ? number_format($financeCollected * 100 / $financeBilled, 1, ',', ' ') . ' %'
+            : '—',
+        // Rapport des impayés (J)
+        'arrears_count' => count($arrearsRows),
+        'arrears_total' => $arrearsTotal,
+        'arrears_oldest_days' => $arrearsOldest,
+        'arrears_30' => $arrearsBuckets['30'],
+        'arrears_60' => $arrearsBuckets['60'],
+        'arrears_90' => $arrearsBuckets['90'],
+        'arrears_90p' => $arrearsBuckets['90p'],
+        'arrears_tenants' => count($arrearsTenants),
     ];
 }
 
@@ -227,6 +286,14 @@ function report_table_payload(string $report, array $rows): array
         case 'movements':
             $headers = ['Date', 'Mouvement', 'Élément', 'Localisation'];
             foreach ($rows['movements'] as $r) $data[] = [dfr($r['date']), $r['type'], $r['subject'], $r['location']];
+            break;
+        case 'finance':
+            $headers = ['Référence', 'Bien', 'Localisation', 'Propriétaire', 'Agent responsable', 'Loyers dus', 'Encaissé', 'Impayé', 'Commission YOUPENDI', 'Dépenses validées', 'Net propriétaire', 'Taux de recouvrement'];
+            foreach ($rows['finance'] as $r) $data[] = [$r['reference'], $r['title'], $r['location'], $r['owner'], $r['agent'], money($r['billed']), money($r['collected']), money($r['outstanding']), money($r['commission']), money($r['expenses']), money($r['net']), $r['recovery']];
+            break;
+        case 'impayes':
+            $headers = ['Référence', 'Bien', 'Locataire', 'Téléphone', 'Propriétaire', 'Agent responsable', 'Période', 'Échéance', 'Montant dû', 'Payé', 'Reste à payer', 'Retard (jours)', 'Ancienneté', 'Statut'];
+            foreach ($rows['impayes'] as $r) $data[] = [$r['reference'], $r['property'], $r['tenant'], $r['tenant_phone'], $r['owner'], $r['agent'], dfr($r['period'], 'm/Y'), dfr($r['due_date']), money($r['amount']), money($r['paid']), money($r['remaining']), (string) $r['days_late'], $r['bucket'], rent_statuses()[$r['status']] ?? $r['status']];
             break;
         case 'portfolio':
         default:
@@ -294,16 +361,40 @@ function report_pdf(
 
         $tableTop = 478.0;
         if ($page['first']) {
-            $summaryItems = [
-                ['Biens', (string) $summary['properties']],
-                ['Contrats actifs', (string) $summary['contracts']],
-                ['Occupés', (string) $summary['occupied']],
-                ['Vacants', (string) $summary['vacant']],
-                ['Disponibles', (string) $summary['available']],
-                ['Commissions', money($summary['commission_total'])],
-                ['Commissions validées', money($summary['commission_validated'])],
-                ['Dépenses', money($summary['expenses'])],
-            ];
+            if ($report === 'finance') {
+                $summaryItems = [
+                    ['Loyers dus', money($summary['finance_billed'] ?? 0)],
+                    ['Encaissé', money($summary['finance_collected'] ?? 0)],
+                    ['Impayé', money($summary['finance_outstanding'] ?? 0)],
+                    ['Taux de recouvrement', (string) ($summary['finance_recovery'] ?? '—')],
+                    ['Commission YOUPENDI', money($summary['finance_commissions'] ?? 0)],
+                    ['Dépenses validées', money($summary['finance_expenses'] ?? 0)],
+                    ['Net propriétaire', money($summary['finance_net'] ?? 0)],
+                    ['Biens', (string) $summary['properties']],
+                ];
+            } elseif ($report === 'impayes') {
+                $summaryItems = [
+                    ['Échéances impayées', (string) ($summary['arrears_count'] ?? 0)],
+                    ['Montant impayé', money($summary['arrears_total'] ?? 0)],
+                    ['Locataires concernés', (string) ($summary['arrears_tenants'] ?? 0)],
+                    ['Retard maximal', ((int) ($summary['arrears_oldest_days'] ?? 0)) . ' jours'],
+                    ['Retard 0-30 j', (string) ($summary['arrears_30'] ?? 0)],
+                    ['Retard 31-60 j', (string) ($summary['arrears_60'] ?? 0)],
+                    ['Retard 61-90 j', (string) ($summary['arrears_90'] ?? 0)],
+                    ['Retard +90 j', (string) ($summary['arrears_90p'] ?? 0)],
+                ];
+            } else {
+                $summaryItems = [
+                    ['Biens', (string) $summary['properties']],
+                    ['Contrats actifs', (string) $summary['contracts']],
+                    ['Occupés', (string) $summary['occupied']],
+                    ['Vacants', (string) $summary['vacant']],
+                    ['Disponibles', (string) $summary['available']],
+                    ['Commissions', money($summary['commission_total'])],
+                    ['Commissions validées', money($summary['commission_validated'])],
+                    ['Dépenses', money($summary['expenses'])],
+                ];
+            }
             $cellWidth = $contentWidth / 4;
             foreach ($summaryItems as $i => [$label, $value]) {
                 $row = intdiv($i, 4);
@@ -828,6 +919,255 @@ function report_occupancy_history(array $contracts, array $filters): array
             }
         }
         $months[] = ['label' => date('M Y', $cursor), 'value' => count($occupied)];
+        $cursor = strtotime('+1 month', $cursor);
+    }
+    return $months;
+}
+
+/**
+ * Recalcule les statuts d'échéances avant les rapports financiers :
+ * un loyer dont la date limite est passée et qui n'est pas réglé devient
+ * « en retard ». Sans effet si la table est absente ou en lecture seule.
+ */
+function report_refresh_rent_statuses(): void
+{
+    try {
+        db()->exec(
+            "UPDATE rents SET status = 'en_retard' WHERE status IN ('a_payer', 'partiel') AND due_date IS NOT NULL AND due_date < ? AND paid_amount < amount",
+            [today()]
+        );
+        db()->exec(
+            "UPDATE rents SET status = 'a_payer' WHERE status = 'a_venir' AND period_start IS NOT NULL AND period_start <= ?",
+            [today()]
+        );
+    } catch (Throwable $e) {
+        // Les rapports restent consultables même si la mise à jour échoue.
+    }
+}
+
+/**
+ * Filtres privés de leur période : dans les rapports financiers, la période
+ * sélectionnée s'applique aux flux (loyers, commissions, dépenses) et non à
+ * la date de création des biens. Le périmètre géographique, propriétaire et
+ * agent reste actif.
+ */
+function report_scope_filters(array $filters): array
+{
+    $scope = $filters;
+    $scope['from'] = '';
+    $scope['to'] = '';
+    return $scope;
+}
+
+/** Fragment SQL « >= from / <= to » pour une colonne de flux financier. */
+function report_period_sql(string $column, array $filters, bool $isDateTime = false): array
+{
+    $sql = '';
+    $params = [];
+    if (($filters['from'] ?? '') !== '') {
+        $sql .= " AND $column >= ?";
+        $params[] = $isDateTime ? $filters['from'] . ' 00:00:00' : $filters['from'];
+    }
+    if (($filters['to'] ?? '') !== '') {
+        $sql .= " AND $column <= ?";
+        $params[] = $isDateTime ? $filters['to'] . ' 23:59:59' : $filters['to'];
+    }
+    return [$sql, $params];
+}
+
+/**
+ * Rapport financier (I) : loyers dus, encaissements, impayés, commission
+ * YOUPENDI, dépenses validées et net propriétaire, agrégés par bien.
+ */
+function report_finance_rows(array $filters): array
+{
+    [$where, $params] = report_property_where(report_scope_filters($filters));
+    $properties = qtry_all(
+        "SELECT p.id, p.reference, p.title, p.province, p.city, p.commune, p.quartier,
+                o.first_name AS owner_first_name, o.last_name AS owner_last_name,
+                u.first_name AS agent_first_name, u.last_name AS agent_last_name
+         FROM properties p
+         LEFT JOIN owners o ON o.id = p.owner_id
+         LEFT JOIN immo_agents ia ON ia.id = p.agent_commercial_id
+         LEFT JOIN users u ON u.id = ia.user_id
+         WHERE $where
+         ORDER BY p.reference ASC, p.id ASC",
+        $params
+    );
+    $ids = array_values(array_filter(array_map('intval', array_column($properties, 'id'))));
+    if (!$ids) {
+        return [];
+    }
+    $in = implode(',', array_fill(0, count($ids), '?'));
+
+    // Loyers dus / encaissés / en retard, sur la période sélectionnée.
+    [$rentPeriod, $rentPeriodParams] = report_period_sql('r.period_start', $filters);
+    $rentAgg = [];
+    foreach (qtry_all(
+        "SELECT r.property_id,
+                COALESCE(SUM(r.amount), 0) AS billed,
+                COALESCE(SUM(r.paid_amount), 0) AS collected,
+                COALESCE(SUM(CASE WHEN r.paid_amount < r.amount - 0.01 AND r.due_date IS NOT NULL AND r.due_date < ?
+                    THEN r.amount - r.paid_amount ELSE 0 END), 0) AS overdue
+         FROM rents r
+         WHERE r.status <> 'annule' AND r.property_id IN ($in)$rentPeriod
+         GROUP BY r.property_id",
+        array_merge([today()], $ids, $rentPeriodParams)
+    ) as $row) {
+        $rentAgg[(int) $row['property_id']] = $row;
+    }
+
+    // Commission de gestion YOUPENDI (recette d'intermédiation).
+    [$comPeriod, $comPeriodParams] = report_period_sql('c.created_at', $filters, true);
+    $comAgg = [];
+    foreach (qtry_all(
+        "SELECT c.property_id, COALESCE(SUM(c.amount), 0) AS total
+         FROM commissions c
+         WHERE c.type = 'gestion_youpendi' AND c.property_id IN ($in)$comPeriod
+         GROUP BY c.property_id",
+        array_merge($ids, $comPeriodParams)
+    ) as $row) {
+        $comAgg[(int) $row['property_id']] = $row;
+    }
+
+    // Dépenses validées rattachées aux biens.
+    [$expPeriod, $expPeriodParams] = report_period_sql('x.expense_date', $filters);
+    $expAgg = [];
+    foreach (qtry_all(
+        "SELECT x.property_id, COALESCE(SUM(x.amount), 0) AS total
+         FROM expenses x
+         WHERE x.status = 'validee' AND x.property_id IN ($in)$expPeriod
+         GROUP BY x.property_id",
+        array_merge($ids, $expPeriodParams)
+    ) as $row) {
+        $expAgg[(int) $row['property_id']] = $row;
+    }
+
+    $rows = [];
+    foreach ($properties as $p) {
+        $pid = (int) $p['id'];
+        $billed = (float) ($rentAgg[$pid]['billed'] ?? 0);
+        $collected = (float) ($rentAgg[$pid]['collected'] ?? 0);
+        $overdue = (float) ($rentAgg[$pid]['overdue'] ?? 0);
+        $commission = (float) ($comAgg[$pid]['total'] ?? 0);
+        $expense = (float) ($expAgg[$pid]['total'] ?? 0);
+        $outstanding = max(0.0, $billed - $collected);
+        $rows[] = [
+            'reference' => $p['reference'] ?? '—',
+            'title' => $p['title'] ?? '—',
+            'location' => trim(($p['province'] ?? '') . ' · ' . ($p['city'] ?? '—') . ' · ' . ($p['commune'] ?? '') . ' · ' . ($p['quartier'] ?? ''), ' ·'),
+            'owner' => trim(($p['owner_first_name'] ?? '') . ' ' . ($p['owner_last_name'] ?? '')) ?: '—',
+            'agent' => trim(($p['agent_first_name'] ?? '') . ' ' . ($p['agent_last_name'] ?? '')) ?: '—',
+            'billed' => $billed,
+            'collected' => $collected,
+            'outstanding' => $outstanding,
+            'overdue' => $overdue,
+            'commission' => $commission,
+            'expenses' => $expense,
+            'net' => $collected - $commission - $expense,
+            'recovery' => $billed > 0 ? number_format($collected * 100 / $billed, 1, ',', ' ') . ' %' : '—',
+        ];
+    }
+    return $rows;
+}
+
+/**
+ * Rapport des impayés (J) : une ligne par échéance de loyer non réglée à sa
+ * date limite, avec le reste à payer, le retard en jours et son ancienneté.
+ */
+function report_arrears_rows(array $filters): array
+{
+    [$where, $params] = report_property_where(report_scope_filters($filters), 'p');
+    [$period, $periodParams] = report_period_sql('r.period_start', $filters);
+    $today = today();
+    $items = qtry_all(
+        "SELECT r.id, r.period_start, r.period_end, r.due_date, r.amount, r.paid_amount, r.currency, r.status,
+                p.reference, p.title AS property_title, p.province, p.city, p.commune, p.quartier,
+                t.first_name AS tenant_first_name, t.last_name AS tenant_last_name, t.phone AS tenant_phone,
+                o.first_name AS owner_first_name, o.last_name AS owner_last_name,
+                u.first_name AS agent_first_name, u.last_name AS agent_last_name
+         FROM rents r
+         INNER JOIN properties p ON p.id = r.property_id
+         LEFT JOIN tenants t ON t.id = r.tenant_id
+         LEFT JOIN owners o ON o.id = COALESCE(r.owner_id, p.owner_id)
+         LEFT JOIN immo_agents ia ON ia.id = p.agent_commercial_id
+         LEFT JOIN users u ON u.id = ia.user_id
+         WHERE ($where)
+           AND r.status NOT IN ('annule', 'paye')
+           AND r.paid_amount < r.amount - 0.01
+           AND r.due_date IS NOT NULL AND r.due_date < ?$period
+         ORDER BY r.due_date ASC, r.id DESC",
+        array_merge($params, [$today], $periodParams)
+    );
+    $rows = [];
+    foreach ($items as $r) {
+        $remaining = max(0.0, (float) $r['amount'] - (float) $r['paid_amount']);
+        $days = !empty($r['due_date'])
+            ? max(0, (int) floor((strtotime($today) - strtotime((string) $r['due_date'])) / 86400))
+            : 0;
+        if ($days <= 30) {
+            [$bucket, $bucketKey] = ['0-30 j', '30'];
+        } elseif ($days <= 60) {
+            [$bucket, $bucketKey] = ['31-60 j', '60'];
+        } elseif ($days <= 90) {
+            [$bucket, $bucketKey] = ['61-90 j', '90'];
+        } else {
+            [$bucket, $bucketKey] = ['+90 j', '90p'];
+        }
+        $rows[] = [
+            'reference' => $r['reference'] ?? '—',
+            'property' => $r['property_title'] ?? '—',
+            'location' => trim(($r['province'] ?? '') . ' · ' . ($r['city'] ?? '—') . ' · ' . ($r['commune'] ?? '') . ' · ' . ($r['quartier'] ?? ''), ' ·'),
+            'tenant' => trim(($r['tenant_first_name'] ?? '') . ' ' . ($r['tenant_last_name'] ?? '')) ?: '—',
+            'tenant_phone' => $r['tenant_phone'] ?? '—',
+            'owner' => trim(($r['owner_first_name'] ?? '') . ' ' . ($r['owner_last_name'] ?? '')) ?: '—',
+            'agent' => trim(($r['agent_first_name'] ?? '') . ' ' . ($r['agent_last_name'] ?? '')) ?: '—',
+            'period' => $r['period_start'] ?? '',
+            'due_date' => $r['due_date'] ?? '',
+            'amount' => (float) $r['amount'],
+            'paid' => (float) $r['paid_amount'],
+            'remaining' => $remaining,
+            'days_late' => $days,
+            'bucket' => $bucket,
+            'bucket_key' => $bucketKey,
+            'status' => $r['status'] ?? '—',
+        ];
+    }
+    return $rows;
+}
+
+/** Historique mensuel loyers dus / encaissés, pour le rapport financier. */
+function report_finance_history(array $filters): array
+{
+    [$where, $params] = report_property_where(report_scope_filters($filters), 'p');
+    $rents = qtry_all(
+        "SELECT r.period_start, r.amount, r.paid_amount
+         FROM rents r
+         INNER JOIN properties p ON p.id = r.property_id
+         WHERE ($where) AND r.status <> 'annule' AND r.period_start IS NOT NULL",
+        $params
+    );
+    $byMonth = [];
+    foreach ($rents as $r) {
+        $month = substr((string) $r['period_start'], 0, 7);
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            continue;
+        }
+        $byMonth[$month]['billed'] = ($byMonth[$month]['billed'] ?? 0.0) + (float) $r['amount'];
+        $byMonth[$month]['collected'] = ($byMonth[$month]['collected'] ?? 0.0) + (float) $r['paid_amount'];
+    }
+    $end = ($filters['to'] ?? '') !== '' ? strtotime($filters['to']) : strtotime(today());
+    $start = ($filters['from'] ?? '') !== '' ? strtotime($filters['from']) : strtotime('-5 months', $end);
+    $months = [];
+    $cursor = strtotime(date('Y-m-01', $start));
+    $last = strtotime(date('Y-m-01', $end));
+    while ($cursor <= $last) {
+        $key = date('Y-m', $cursor);
+        $months[] = [
+            'label' => date('M Y', $cursor),
+            'billed' => $byMonth[$key]['billed'] ?? 0.0,
+            'collected' => $byMonth[$key]['collected'] ?? 0.0,
+        ];
         $cursor = strtotime('+1 month', $cursor);
     }
     return $months;

@@ -140,6 +140,21 @@ function agent_placeholder(): string
 }
 
 /**
+ * Logo de la vitrine avec chaîne de repli : on ne renvoie que le chemin d'un
+ * fichier réellement présent sur le serveur, pour ne jamais afficher d'image
+ * cassée dans l'en-tête, le pied de page ou les pages de connexion.
+ */
+function logo_url(): string
+{
+    foreach (['img/logo-youpendi.png', 'img/logo-youpendi.webp', 'img/logo.svg', 'img/logo-mark.png'] as $candidate) {
+        if (asset_exists($candidate)) {
+            return asset($candidate);
+        }
+    }
+    return photo_placeholder();
+}
+
+/**
  * Sert un fichier statique depuis un dossier de l'application.
  *
  * Sert de filet de sécurité : même sans règle de réécriture sur l'hébergeur,
