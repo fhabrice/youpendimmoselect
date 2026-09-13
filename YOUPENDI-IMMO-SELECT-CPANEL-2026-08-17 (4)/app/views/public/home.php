@@ -1,4 +1,10 @@
-<?php $hero = asset('img/hero-house.jpg'); ?>
+<?php
+// Image de couverture de la vitrine : on vérifie que le fichier existe vraiment
+// sur le serveur avant de l'utiliser, sinon on retombe sur une image du paquet.
+$hero = asset_exists('img/hero-house.jpg')
+    ? asset('img/hero-house.jpg')
+    : (asset_exists('img/hero.jpg') ? asset('img/hero.jpg') : photo_placeholder());
+?>
 <section class="hero" style="background-image:url('<?= e($hero) ?>')">
   <div class="hero-inner">
     <h1>ACHETEZ OU LOUEZ VOTRE PROPRIÉTÉ<br><span>DANS TOUTE LA RDC</span></h1>

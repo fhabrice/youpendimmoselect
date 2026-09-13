@@ -65,7 +65,8 @@ if (in_array($role, ['admin','finance','manager','supervisor','agent'], true)) {
             ['app/paiements', 'Encaissements'],
             ['app/commissions', 'Commissions'],
             ['app/reversements', 'Reversements'],
-            ['app/rapports', 'Rapports financiers'],
+            ['app/rapports?report=finance', 'Rapport financier'],
+            ['app/rapports?report=impayes', 'Rapport des impayés'],
         ]];
     }
     if ($role === 'admin') {
@@ -91,6 +92,8 @@ if (in_array($role, ['admin','finance','manager','supervisor','agent'], true)) {
         ['espace/proprietaire/incidents', 'Incidents', '!'],
         ['espace/proprietaire/documents', 'Documents', '▤'],
         ['app/rapports', 'Rapport de portefeuille', '▦'],
+        ['app/rapports?report=finance', 'Rapport financier', '$'],
+        ['app/rapports?report=impayes', 'Rapport des impayés', '⚠'],
         ['app/messages', 'Messages', '✉'],
     ];
 } elseif ($role === 'tenant') {
@@ -114,6 +117,28 @@ if (in_array($role, ['admin','finance','manager','supervisor','agent'], true)) {
     ];
 }
 $path = request_path();
+/**
+ * Un lien de menu est actif si son chemin correspond à la page courante et,
+ * lorsqu'il porte des paramètres (ex. app/rapports?report=finance), si ces
+ * paramètres correspondent aussi à la requête courante.
+ */
+$menu_link_active = static function (string $link) use ($path): bool {
+    $linkPath = explode('?', $link)[0];
+    if (rtrim($path, '/') !== '/' . trim($linkPath, '/')) {
+        return false;
+    }
+    $query = parse_url($link, PHP_URL_QUERY);
+    if (!$query) {
+        return true;
+    }
+    parse_str($query, $linkQuery);
+    foreach ($linkQuery as $key => $value) {
+        if ((string) ($_GET[$key] ?? '') !== (string) $value) {
+            return false;
+        }
+    }
+    return true;
+};
 ?>
 <!doctype html>
 <html lang="fr">
@@ -139,14 +164,14 @@ $path = request_path();
             <summary><?= e($item[1]) ?></summary>
             <?php foreach ($item[2] as $sub):
               $href = base_url($sub[0]);
-              $active = rtrim($path,'/') === '/'.trim(explode('?', $sub[0])[0], '/');
+              $active = $menu_link_active($sub[0]);
             ?>
               <a class="<?= $active?'active':'' ?>" href="<?= e($href) ?>"><?= e($sub[1]) ?></a>
             <?php endforeach; ?>
           </details>
         <?php else:
           $href = base_url($item[0]);
-          $active = rtrim($path,'/') === '/'.trim($item[0], '/');
+          $active = $menu_link_active($item[0]);
         ?>
           <a class="<?= $active?'active':'' ?>" href="<?= e($href) ?>"><?= e($item[2] ?? '•') ?> <?= e($item[1]) ?></a>
         <?php endif; ?>

@@ -11,7 +11,7 @@
 <div class="auth-wrap">
   <div class="auth-visual">
     <div class="brand" style="margin-bottom:auto">
-      <img src="<?= e(asset('img/logo-youpendi.png')) ?>" alt="YOUPENDI" style="height:80px;background:#fff;border-radius:10px;padding:4px">
+      <img src="<?= e(logo_url()) ?>" alt="YOUPENDI" style="height:80px;background:#fff;border-radius:10px;padding:4px">
     </div>
     <p class="kicker">YOUPENDI IMMO SELECT</p>
     <h1>Trouvez votre maison partout en RDC.</h1>

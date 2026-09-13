@@ -1,7 +1,9 @@
 <?php
 $nav = $nav ?? '';
 $wa = whatsapp_link('Bonjour YOUPENDI IMMO SELECT, je souhaite des informations.');
-$logo = asset('img/logo-youpendi.png');
+// Logo de la vitrine : chaîne de repli pour ne jamais afficher une image cassée,
+// même si un fichier du paquet manque sur le serveur.
+$logo = logo_url();
 ?>
 <!doctype html>
 <html lang="fr">

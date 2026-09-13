@@ -255,6 +255,7 @@ function migrate(Database $db): void
         furnished INTEGER DEFAULT 0,
         amenities TEXT,
         status VARCHAR(30) DEFAULT 'brouillon',
+        offre VARCHAR(40) DEFAULT 'location_mensuelle',
         available_from DATE,
         owner_id INTEGER,
         agent_apporteur_id INTEGER,
@@ -753,15 +754,18 @@ function migrate(Database $db): void
         'CREATE INDEX IF NOT EXISTS idx_notif_user ON app_notifications(user_id, is_read)',
         'CREATE INDEX IF NOT EXISTS idx_res_dates ON reservations(checkin, checkout)',
     ];
-    if ($db->driver === 'mysql') {
-        try {
-            $db->pdo()->exec("ALTER TABLE properties ADD COLUMN offre VARCHAR(40) DEFAULT 'location_mensuelle'");
-        } catch (Throwable $e) {
-        }
-        try {
-            $db->pdo()->exec("ALTER TABLE proprietes ADD COLUMN offre VARCHAR(40) DEFAULT 'location_mensuelle'");
-        } catch (Throwable $e) {
-        }
+    // La colonne « offre » (vente / location_mensuelle / location_journaliere) est
+    // indispensable à la vitrine : toutes les requêtes publiques la filtrent. Sans
+    // elle (anciennes bases SQLite de démonstration), les requêtes échouent et
+    // aucune propriété ni photo ne s'affiche sur le site. On la garantit donc sur
+    // TOUS les pilotes, pas seulement MySQL.
+    try {
+        ensure_column($db, 'properties', 'offre', "VARCHAR(40) DEFAULT 'location_mensuelle'");
+    } catch (Throwable $e) {
+    }
+    try {
+        ensure_column($db, 'proprietes', 'offre', "VARCHAR(40) DEFAULT 'location_mensuelle'");
+    } catch (Throwable $e) {
     }
 
     foreach ($indexes as $sql) {
